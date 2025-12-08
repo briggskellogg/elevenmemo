@@ -23,7 +23,7 @@
         "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "alwaysOnTop": false,
+        "alwaysOnTop": true,
         "transparent": false,
         "shadow": true,
         "dragDropEnabled": false
@@ -32,7 +32,7 @@
     "security": {
       "csp": null
     },
-    "macOSPrivateApi": false
+    "macOSPrivateApi": true
   },
   "bundle": {
     "createUpdaterArtifacts": false,
