@@ -20,9 +20,23 @@ export type LiveWaveformProps = HTMLAttributes<HTMLDivElement> & {
   historySize?: number
   updateRate?: number
   mode?: "scrolling" | "static"
+  /** Interpolation factor for smooth bar height transitions (0-1, higher = faster) */
+  lerpFactor?: number
+  /** Enable subtle glow effect on bars */
+  glowEnabled?: boolean
   onError?: (error: Error) => void
   onStreamReady?: (stream: MediaStream) => void
   onStreamEnd?: () => void
+}
+
+// Linear interpolation helper
+function lerp(start: number, end: number, factor: number): number {
+  return start + (end - start) * factor
+}
+
+// Ease out cubic for smoother deceleration
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3)
 }
 
 export const LiveWaveform = ({
@@ -43,6 +57,8 @@ export const LiveWaveform = ({
   historySize = 60,
   updateRate = 30,
   mode = "static",
+  lerpFactor = 0.15,
+  glowEnabled = true,
   onError,
   onStreamReady,
   onStreamEnd,
@@ -65,25 +81,51 @@ export const LiveWaveform = ({
   const gradientCacheRef = useRef<CanvasGradient | null>(null)
   const lastWidthRef = useRef(0)
   const isInitializedRef = useRef(false)
+  // Store target values and displayed values separately for smooth interpolation
+  const targetBarsRef = useRef<number[]>([])
+  const displayedBarsRef = useRef<number[]>([])
+  // For smooth scrolling offset
+  const scrollOffsetRef = useRef(0)
+  // Fade-in opacity for smooth transitions (0-1)
+  const fadeOpacityRef = useRef(0)
+  // Track previous active state to detect transitions
+  const wasActiveRef = useRef(false)
+  // Warm-up frame counter to skip initial jittery data
+  const warmupFramesRef = useRef(0)
+  const WARMUP_FRAMES = 10 // Skip first N frames after init
 
   const heightStyle = typeof height === "number" ? `${height}px` : height
 
-  // Clear canvas immediately when active changes
+  // Handle transitions when active changes
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext("2d")
     if (!ctx) return
     
-    // Clear everything immediately
-    const rect = canvas.getBoundingClientRect()
-    ctx.clearRect(0, 0, rect.width * 2, rect.height * 2)
+    if (active && !wasActiveRef.current) {
+      // Starting: fade in from 0
+      fadeOpacityRef.current = 0
+      warmupFramesRef.current = 0
+      
+      // Clear everything
+      const rect = canvas.getBoundingClientRect()
+      ctx.clearRect(0, 0, rect.width * 2, rect.height * 2)
+      
+      // Reset all data
+      historyRef.current = []
+      staticBarsRef.current = []
+      lastActiveDataRef.current = []
+      targetBarsRef.current = []
+      displayedBarsRef.current = []
+      scrollOffsetRef.current = 0
+      isInitializedRef.current = false
+    } else if (!active && wasActiveRef.current) {
+      // Stopping: start fade out (handled in animation loop)
+      // Keep fadeOpacityRef at current value, it will fade down
+    }
     
-    // Reset all data
-    historyRef.current = []
-    staticBarsRef.current = []
-    lastActiveDataRef.current = []
-    isInitializedRef.current = false
+    wasActiveRef.current = active
     needsRedrawRef.current = true
   }, [active])
 
@@ -361,13 +403,31 @@ export const LiveWaveform = ({
     if (!ctx) return
 
     let rafId: number
+    let lastFrameTime = 0
 
     const animate = (currentTime: number) => {
+      // Calculate delta time for frame-independent animation
+      const deltaTime = lastFrameTime ? (currentTime - lastFrameTime) / 16.67 : 1
+      lastFrameTime = currentTime
+
       // Render waveform
       const rect = canvas.getBoundingClientRect()
 
-      // Update audio data if active and initialized
-      if (active && isInitializedRef.current && currentTime - lastUpdateRef.current > updateRate) {
+      // Handle fade transitions
+      if (active && isInitializedRef.current) {
+        // Fade in when active
+        fadeOpacityRef.current = Math.min(1, fadeOpacityRef.current + 0.08 * deltaTime)
+        // Count warmup frames
+        warmupFramesRef.current++
+      } else if (!active && fadeOpacityRef.current > 0) {
+        // Fade out when inactive
+        fadeOpacityRef.current = Math.max(0, fadeOpacityRef.current - 0.1 * deltaTime)
+        needsRedrawRef.current = true
+      }
+
+      // Update audio data if active, initialized, and past warmup period
+      const isPastWarmup = warmupFramesRef.current > WARMUP_FRAMES
+      if (active && isInitializedRef.current && isPastWarmup && currentTime - lastUpdateRef.current > updateRate) {
         lastUpdateRef.current = currentTime
 
         if (analyserRef.current) {
@@ -409,6 +469,8 @@ export const LiveWaveform = ({
               newBars.push(Math.max(0.05, value))
             }
 
+            // Store as target values for interpolation
+            targetBarsRef.current = newBars
             staticBarsRef.current = newBars
             lastActiveDataRef.current = newBars
           } else {
@@ -436,14 +498,39 @@ export const LiveWaveform = ({
         }
       }
 
-      // Only redraw if needed
-      if (!needsRedrawRef.current && !active) {
+      // Interpolate displayed values toward target values for smooth animation
+      if (mode === "static" && targetBarsRef.current.length > 0) {
+        const adjustedLerp = Math.min(1, lerpFactor * deltaTime)
+        
+        // Initialize displayed bars if needed
+        if (displayedBarsRef.current.length !== targetBarsRef.current.length) {
+          displayedBarsRef.current = [...targetBarsRef.current]
+        } else {
+          // Smoothly interpolate each bar
+          for (let i = 0; i < targetBarsRef.current.length; i++) {
+            const target = targetBarsRef.current[i] ?? 0.05
+            const current = displayedBarsRef.current[i] ?? 0.05
+            displayedBarsRef.current[i] = lerp(current, target, adjustedLerp)
+          }
+        }
+        needsRedrawRef.current = true
+      }
+
+      // Only redraw if needed (also redraw during fade out)
+      const isFading = fadeOpacityRef.current > 0 && fadeOpacityRef.current < 1
+      if (!needsRedrawRef.current && !active && !isFading) {
         rafId = requestAnimationFrame(animate)
         return
       }
 
-      needsRedrawRef.current = active
+      needsRedrawRef.current = active || isFading
       ctx.clearRect(0, 0, rect.width, rect.height)
+
+      // Skip rendering if fully faded out
+      if (fadeOpacityRef.current <= 0 && !active && !processing) {
+        rafId = requestAnimationFrame(animate)
+        return
+      }
 
       const computedBarColor =
         barColor ||
@@ -457,14 +544,17 @@ export const LiveWaveform = ({
       const step = barWidth + barGap
       const barCount = Math.floor(rect.width / step)
       const centerY = rect.height / 2
+      
+      // Apply fade opacity to all rendering
+      const fadeMultiplier = fadeOpacityRef.current
 
       // Draw bars based on mode
       if (mode === "static") {
-        // Static mode - bars in fixed positions
+        // Use interpolated displayed values for smooth rendering
         const dataToRender = processing
           ? staticBarsRef.current
-          : active
-            ? staticBarsRef.current
+          : active && displayedBarsRef.current.length > 0
+            ? displayedBarsRef.current
             : staticBarsRef.current.length > 0
               ? staticBarsRef.current
               : []
@@ -475,8 +565,26 @@ export const LiveWaveform = ({
           const barHeight = Math.max(baseBarHeight, value * rect.height * 0.8)
           const y = centerY - barHeight / 2
 
+          // Draw subtle glow for active bars
+          if (glowEnabled && active && value > 0.3) {
+            const glowIntensity = easeOutCubic(value) * 0.3 * fadeMultiplier
+            ctx.save()
+            ctx.shadowColor = computedBarColor
+            ctx.shadowBlur = 8 * value
+            ctx.fillStyle = computedBarColor
+            ctx.globalAlpha = glowIntensity
+            if (barRadius > 0) {
+              ctx.beginPath()
+              ctx.roundRect(x, y, barWidth, barHeight, barRadius)
+              ctx.fill()
+            } else {
+              ctx.fillRect(x, y, barWidth, barHeight)
+            }
+            ctx.restore()
+          }
+
           ctx.fillStyle = computedBarColor
-          ctx.globalAlpha = 0.4 + value * 0.6
+          ctx.globalAlpha = (0.4 + value * 0.6) * fadeMultiplier
 
           if (barRadius > 0) {
             ctx.beginPath()
@@ -487,16 +595,40 @@ export const LiveWaveform = ({
           }
         }
       } else {
-        // Scrolling mode - original behavior
+        // Scrolling mode - with smooth scroll offset
+        const scrollStep = step
+        
         for (let i = 0; i < barCount && i < historyRef.current.length; i++) {
           const dataIndex = historyRef.current.length - 1 - i
           const value = historyRef.current[dataIndex] || 0.1
-          const x = rect.width - (i + 1) * step
+          // Smooth scrolling with subpixel positioning
+          const x = rect.width - (i + 1) * scrollStep + scrollOffsetRef.current
           const barHeight = Math.max(baseBarHeight, value * rect.height * 0.8)
           const y = centerY - barHeight / 2
 
+          // Skip bars that are off-screen
+          if (x < -barWidth || x > rect.width) continue
+
+          // Draw subtle glow for active bars
+          if (glowEnabled && active && value > 0.3) {
+            const glowIntensity = easeOutCubic(value) * 0.3 * fadeMultiplier
+            ctx.save()
+            ctx.shadowColor = computedBarColor
+            ctx.shadowBlur = 8 * value
+            ctx.fillStyle = computedBarColor
+            ctx.globalAlpha = glowIntensity
+            if (barRadius > 0) {
+              ctx.beginPath()
+              ctx.roundRect(x, y, barWidth, barHeight, barRadius)
+              ctx.fill()
+            } else {
+              ctx.fillRect(x, y, barWidth, barHeight)
+            }
+            ctx.restore()
+          }
+
           ctx.fillStyle = computedBarColor
-          ctx.globalAlpha = 0.4 + value * 0.6
+          ctx.globalAlpha = (0.4 + value * 0.6) * fadeMultiplier
 
           if (barRadius > 0) {
             ctx.beginPath()
@@ -561,6 +693,8 @@ export const LiveWaveform = ({
     fadeEdges,
     fadeWidth,
     mode,
+    lerpFactor,
+    glowEnabled,
   ])
 
   return (

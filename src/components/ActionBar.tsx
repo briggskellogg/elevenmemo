@@ -1,6 +1,9 @@
-import { Clipboard, Trash2, Check, Archive, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { 
+  BrandCopyIcon, 
+  BrandCheckIcon,
+} from '@/components/ui/brand-icons'
 
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -17,88 +20,34 @@ function Kbd({ children, className }: { children: React.ReactNode; className?: s
 
 interface ActionBarProps {
   hasContent: boolean
-  isArchived?: boolean
-  isProcessing?: boolean
-  onArchive: () => void
   onCopy: () => void
-  onClear: () => void
-  archiveTriggered?: boolean
   copyTriggered?: boolean
-  clearTriggered?: boolean
 }
 
 export function ActionBar({
   hasContent,
-  isArchived = false,
-  isProcessing = false,
-  onArchive,
   onCopy,
-  onClear,
-  archiveTriggered = false,
   copyTriggered = false,
-  clearTriggered = false,
 }: ActionBarProps) {
-  const archiveDisabled = !hasContent || isArchived || isProcessing
-
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onArchive}
-        disabled={archiveDisabled}
-        className={cn(
-          'h-8 px-2 gap-1.5 transition-all',
-          archiveTriggered && 'bg-green-500/20 text-green-500',
-          isArchived && hasContent && 'opacity-50'
-        )}
-        aria-label="Archive transcript"
-        title={isArchived ? 'Already archived' : isProcessing ? 'Processing...' : 'Archive transcript'}
-      >
-        {archiveTriggered || isArchived ? (
-          <Check className="h-4 w-4" />
-        ) : isProcessing ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Archive className="h-4 w-4" />
-        )}
-        <Kbd>A</Kbd>
-      </Button>
+    <div className="flex items-center">
       <Button
         variant="ghost"
         size="sm"
         onClick={onCopy}
         disabled={!hasContent}
         className={cn(
-          'h-8 px-2 gap-1.5 transition-all',
-          copyTriggered && 'bg-green-500/20 text-green-500'
+          'h-9 px-2 gap-1 transition-all',
+          copyTriggered && 'bg-[#2DD28D]/20'
         )}
         aria-label="Copy transcript"
       >
         {copyTriggered ? (
-          <Check className="h-4 w-4" />
+          <BrandCheckIcon size={21} />
         ) : (
-          <Clipboard className="h-4 w-4" />
+          <BrandCopyIcon size={21} />
         )}
         <Kbd>C</Kbd>
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onClear}
-        disabled={!hasContent}
-        className={cn(
-          'h-8 px-2 gap-1.5 transition-all',
-          clearTriggered && 'bg-red-500/20 text-red-500'
-        )}
-        aria-label="Clear transcript"
-      >
-        {clearTriggered ? (
-          <Check className="h-4 w-4" />
-        ) : (
-          <Trash2 className="h-4 w-4" />
-        )}
-        <Kbd>D</Kbd>
       </Button>
     </div>
   )

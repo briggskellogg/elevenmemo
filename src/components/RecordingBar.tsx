@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Mic, Languages, Pause, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  BrandMicIcon,
+  BrandLanguagesIcon,
+  BrandRecordIcon,
+  BrandStopIcon,
+} from '@/components/ui/brand-icons'
 import {
   Select,
   SelectContent,
@@ -40,13 +45,12 @@ export type ScribeLanguageCode = typeof SCRIBE_LANGUAGES[number]['code']
 
 interface RecordingBarProps {
   isRecording: boolean
-  isPaused?: boolean
   isLoading?: boolean
+  isProcessing?: boolean  // True when analyzing/archiving after recording ends
   disabled?: boolean
+  hasContent?: boolean
   onStartRecording: () => void
   onStopRecording: () => void
-  onPauseRecording?: () => void
-  onResumeRecording?: () => void
   selectedDeviceId?: string
   onDeviceChange?: (deviceId: string) => void
   selectedLanguage: ScribeLanguageCode
@@ -62,13 +66,12 @@ function getCleanDeviceName(label: string | undefined): string {
 
 export function RecordingBar({
   isRecording,
-  isPaused = false,
   isLoading = false,
+  isProcessing = false,
   disabled = false,
+  hasContent = false,
   onStartRecording,
   onStopRecording,
-  onPauseRecording,
-  onResumeRecording,
   selectedDeviceId,
   onDeviceChange,
   selectedLanguage,
@@ -122,54 +125,31 @@ export function RecordingBar({
     return getCleanDeviceName(device?.label)
   }
 
-  const handlePauseToggle = () => {
-    if (isPaused) {
-      onResumeRecording?.()
-    } else {
-      onPauseRecording?.()
-    }
-  }
-
   return (
     <div className="flex items-center gap-2 p-2 rounded-xl bg-muted/30 border border-border/50">
       {/* Start/Stop Recording Button */}
       <Button
-        variant={isRecording ? "destructive" : "secondary"}
+        variant={isRecording || isProcessing ? "destructive" : "secondary"}
         onClick={isRecording ? onStopRecording : onStartRecording}
-        disabled={disabled || isLoading}
+        disabled={disabled || isLoading || isProcessing}
         className={cn(
           'flex-1 h-10 gap-2 font-medium',
-          !isRecording && 'bg-muted hover:bg-muted/80'
+          !isRecording && !isProcessing && 'bg-muted hover:bg-muted/80',
+          isProcessing && 'opacity-70'
         )}
       >
-        {isLoading ? (
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          {isLoading || isProcessing ? (
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        ) : isRecording ? (
+          <BrandStopIcon size={21} />
         ) : (
-          <>
-            {isRecording ? 'Stop Recording' : 'Start Recording'}
-          </>
+          <BrandRecordIcon size={21} />
         )}
-        <Kbd>R</Kbd>
+        <span className="min-w-[100px]">
+          {isProcessing ? 'Processing...' : isRecording ? 'End Recording' : hasContent ? 'New Recording' : 'Start Recording'}
+        </span>
+        {!isProcessing && <Kbd>{isRecording ? 'E' : 'R'}</Kbd>}
       </Button>
-
-      {/* Pause/Resume Button - only visible when recording */}
-      {isRecording && (
-        <Button
-          variant="secondary"
-          onClick={handlePauseToggle}
-          className={cn(
-            'h-10 px-3 shrink-0 gap-2',
-            isPaused && 'bg-amber-500/20 text-amber-500 hover:bg-amber-500/30'
-          )}
-        >
-          {isPaused ? (
-            <Play className="h-4 w-4" />
-          ) : (
-            <Pause className="h-4 w-4" />
-          )}
-          <Kbd className={isPaused ? 'bg-amber-500/30 border-amber-500/50' : ''}>P</Kbd>
-        </Button>
-      )}
 
       {/* Microphone Selector */}
       <Select
@@ -178,7 +158,7 @@ export function RecordingBar({
         disabled={isRecording}
       >
         <SelectTrigger className="flex-1 min-w-0 h-10 bg-transparent border-0 gap-2">
-          <Mic className="h-4 w-4 text-muted-foreground shrink-0" />
+          <BrandMicIcon size={21} />
           <SelectValue placeholder="Select mic">
             <span className="truncate text-sm block max-w-[120px]">
               {getSelectedDeviceDisplay()}
@@ -208,7 +188,7 @@ export function RecordingBar({
         disabled={isRecording}
       >
         <SelectTrigger className="flex-1 h-10 bg-transparent border-0 gap-2">
-          <Languages className="h-4 w-4 text-muted-foreground shrink-0" />
+          <BrandLanguagesIcon size={21} />
           <SelectValue>
             <span className="truncate text-sm">{currentLanguage?.name}</span>
           </SelectValue>
@@ -224,3 +204,4 @@ export function RecordingBar({
     </div>
   )
 }
+

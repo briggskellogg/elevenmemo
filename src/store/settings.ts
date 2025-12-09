@@ -11,6 +11,10 @@ export interface ArchivedSpeaker {
   notes: string
 }
 
+// Default category tags
+export const DEFAULT_CATEGORIES = ['Note', 'Message', 'Rant', 'Idea', 'Meeting', 'Conversation', 'Task'] as const
+export type DefaultCategory = typeof DEFAULT_CATEGORIES[number]
+
 export interface ArchivedTranscript {
   id: string
   title: string
@@ -18,6 +22,15 @@ export interface ArchivedTranscript {
   segments: TranscriptSegment[]
   speakers: ArchivedSpeaker[]
   hasConsent: boolean
+  // AI-generated analysis
+  category?: string // e.g., "Note", "Email", "Rant", "Idea", or custom
+  urgencyLevel?: number // 0-5: 0=not urgent, 5=extremely urgent
+  noveltyLevel?: number // 0-5: 0=routine, 5=groundbreaking
+  // Legacy fields (kept for backwards compatibility)
+  priority?: string
+  priorityReason?: string
+  qualityScore?: number
+  qualityReason?: string
   noveltyScore?: number
   coherenceScore?: number
   createdAt: number
@@ -32,6 +45,7 @@ interface SettingsState {
   archiveDialogOpen: boolean
   archivedTranscripts: ArchivedTranscript[]
   isArchiveLoaded: boolean
+  customCategories: string[] // User-defined categories that persist
 
   setApiKey: (key: string) => void
   setAnthropicApiKey: (key: string) => void
@@ -46,6 +60,9 @@ interface SettingsState {
   removeArchivedTranscript: (id: string) => void
   updateArchivedTranscript: (id: string, updates: Partial<ArchivedTranscript>) => void
   setIsArchiveLoaded: (loaded: boolean) => void
+  addCustomCategory: (category: string) => void
+  removeCustomCategory: (category: string) => void
+  setCustomCategories: (categories: string[]) => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -59,6 +76,7 @@ export const useSettingsStore = create<SettingsState>()(
       archiveDialogOpen: false,
       archivedTranscripts: [],
       isArchiveLoaded: false,
+      customCategories: [],
 
       setApiKey: key =>
         set({ apiKey: key }, undefined, 'setApiKey'),
@@ -124,6 +142,29 @@ export const useSettingsStore = create<SettingsState>()(
 
       setIsArchiveLoaded: loaded =>
         set({ isArchiveLoaded: loaded }, undefined, 'setIsArchiveLoaded'),
+
+      addCustomCategory: category =>
+        set(
+          state => ({
+            customCategories: state.customCategories.includes(category)
+              ? state.customCategories
+              : [...state.customCategories, category]
+          }),
+          undefined,
+          'addCustomCategory'
+        ),
+
+      removeCustomCategory: category =>
+        set(
+          state => ({
+            customCategories: state.customCategories.filter(c => c !== category)
+          }),
+          undefined,
+          'removeCustomCategory'
+        ),
+
+      setCustomCategories: categories =>
+        set({ customCategories: categories }, undefined, 'setCustomCategories'),
     }),
     {
       name: 'settings-store',

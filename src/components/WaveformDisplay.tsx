@@ -57,14 +57,14 @@ export function WaveformDisplay({
         <div className="flex items-center gap-2">
           <div className={cn(
             'h-2 w-2 rounded-full',
-            status === 'Live' && 'bg-red-500 animate-pulse',
-            status === 'Paused' && 'bg-amber-500',
+            status === 'Live' && 'bg-[#EB524B] animate-pulse',
+            status === 'Paused' && 'bg-[#F58633]',
             status === 'Offline' && 'bg-gray-400'
           )} />
           <span className={cn(
             'text-xs font-medium',
             status === 'Live' && 'text-foreground',
-            status === 'Paused' && 'text-amber-500',
+            status === 'Paused' && 'text-[#F58633]',
             status === 'Offline' && 'text-muted-foreground'
           )}>
             {status}

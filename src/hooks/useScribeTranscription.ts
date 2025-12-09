@@ -11,6 +11,7 @@ export interface UseScribeTranscriptionOptions {
   apiKey: string
   deviceId?: string
   languageCode?: string
+  numSpeakers?: number // Enable diarization when > 1
   onError?: (error: Error) => void
 }
 
@@ -35,17 +36,25 @@ export function useScribeTranscription({
   apiKey,
   deviceId,
   languageCode = 'en',
+  numSpeakers,
   onError,
 }: UseScribeTranscriptionOptions): UseScribeTranscriptionReturn {
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
   const [speakers, setSpeakers] = useState<Set<string>>(new Set())
   const [partialSpeaker, setPartialSpeaker] = useState<string | null>(null)
   const [tokenError, setTokenError] = useState<string | null>(null)
+  // Track processed texts to prevent duplicates from multiple callbacks
+  const [processedTexts] = useState(() => new Set<string>())
+
+  // Log diarization config for debugging
+  console.log('[Scribe] Diarization config:', { numSpeakers, enabled: numSpeakers && numSpeakers > 1 })
 
   const scribe = useScribe({
     modelId: 'scribe_v2_realtime',
     languageCode,
     includeTimestamps: true,
+    // Enable diarization when numSpeakers is set
+    ...(numSpeakers && numSpeakers > 1 ? { numSpeakers } : {}),
     // Tuned VAD settings for better noise rejection
     vadThreshold: 0.6, // Higher threshold = less sensitive to quiet sounds
     minSpeechDurationMs: 250, // Require longer speech to trigger
@@ -59,10 +68,23 @@ export function useScribeTranscription({
     onCommittedTranscriptWithTimestamps: (data) => {
       const text = data.text.trim()
       if (!text) return
+      
+      // Create a unique key for this segment to prevent duplicates
+      // Use text + timestamp from first word if available
+      const firstWord = data.words?.[0] as { start?: number } | undefined
+      const segmentKey = `${text}-${firstWord?.start || Date.now()}`
+      if (processedTexts.has(segmentKey)) return
+      processedTexts.add(segmentKey)
 
       // Extract speaker from words if available
       let speakerId: string | null = null
       if (data.words && data.words.length > 0) {
+        // Log word data for debugging diarization
+        const wordWithSpeaker = data.words.find(w => w.speaker_id)
+        if (wordWithSpeaker) {
+          console.log('[Scribe] Speaker found in words:', wordWithSpeaker.speaker_id)
+        }
+        
         // Find the most common speaker in this segment
         const speakerCounts = new Map<string, number>()
         for (const word of data.words) {
@@ -72,6 +94,7 @@ export function useScribeTranscription({
         }
         if (speakerCounts.size > 0) {
           speakerId = [...speakerCounts.entries()].reduce((a, b) => a[1] > b[1] ? a : b)[0]
+          console.log('[Scribe] Assigned speaker:', speakerId, 'to segment:', text.substring(0, 50))
         }
       }
 
@@ -81,21 +104,8 @@ export function useScribeTranscription({
         setSpeakers(prev => new Set([...prev, speakerId]))
       }
     },
-    // Fallback for when timestamps aren't available
-    onCommittedTranscript: (data) => {
-      const text = data.text.trim()
-      if (!text) return
-      
-      // Check if we already handled this in onCommittedTranscriptWithTimestamps
-      // by checking if the last segment has the same text
-      setSegments(prev => {
-        const lastSegment = prev[prev.length - 1]
-        if (lastSegment && lastSegment.text === text) {
-          return prev // Already handled
-        }
-        return [...prev, { text, speakerId: null }]
-      })
-    },
+    // Don't use onCommittedTranscript - it fires alongside onCommittedTranscriptWithTimestamps
+    // causing duplicates. We only use the timestamps version.
     onPartialTranscript: () => {
       // For partial transcripts, we track via scribe.partialTranscript
     },
@@ -153,9 +163,21 @@ export function useScribeTranscription({
   }, [scribe])
 
   // Pause by disconnecting (stops API calls, preserves transcript)
+  // Force completion of any partial transcript before pausing
   const pause = useCallback(() => {
+    // Commit any partial transcript as a segment before pausing
+    const partial = scribe.partialTranscript?.trim()
+    if (partial) {
+      const segmentKey = `${partial}-pause-${Date.now()}`
+      if (!processedTexts.has(segmentKey)) {
+        processedTexts.add(segmentKey)
+        setSegments(prev => [...prev, { text: partial, speakerId: null }])
+      }
+      // Clear the partial transcript in scribe
+      scribe.clearTranscripts()
+    }
     scribe.disconnect()
-  }, [scribe])
+  }, [scribe, processedTexts])
 
   // Resume by reconnecting
   const resume = useCallback(async () => {
@@ -182,9 +204,10 @@ export function useScribeTranscription({
     setSegments([])
     setSpeakers(new Set())
     setPartialSpeaker(null)
+    processedTexts.clear()
     scribe.clearTranscripts()
     setTokenError(null)
-  }, [scribe])
+  }, [scribe, processedTexts])
 
   // Combine errors
   const combinedError = tokenError || scribe.error

@@ -1,29 +1,44 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Toaster, toast } from 'sonner'
-import { X, Trash2, Clipboard, Archive } from 'lucide-react'
 import { WaveformDisplay } from './components/WaveformDisplay'
+import { BrandComputerAudioIcon, BrandSingleSpeakerIcon, BrandCopyIcon, BrandCheckIcon } from '@/components/ui/brand-icons'
 import { RecordingBar, type ScribeLanguageCode } from './components/RecordingBar'
 import { TranscriptBox } from './components/TranscriptBox'
-import { ActionBar } from './components/ActionBar'
 import { ArchiveDialog } from './components/ArchiveDialog'
 import { ThemeToggle } from './components/ThemeToggle'
 import { useApiKey } from './hooks/useApiKey'
 import { useArchive } from './hooks/useArchive'
 import { useScribeTranscription } from './hooks/useScribeTranscription'
 import { useSettingsStore } from './store/settings'
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import llmemoLogoDark from './assets/llmemo-logo-dark.svg'
 import llmemoLogoLight from './assets/llmemo-logo-light.svg'
 import orbLogo from './assets/orb-logo.png'
 import './App.css'
+
+function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <kbd className={cn(
+      'inline-flex items-center justify-center px-1.5 py-0.5 rounded',
+      'bg-muted/80 border border-border/50 text-[10px] font-medium text-muted-foreground',
+      'min-w-[18px]',
+      className
+    )}>
+      {children}
+    </kbd>
+  )
+}
+
+// Generate a simple title from the first few words
+function generateTitle(text: string): string {
+  const words = text.trim().split(/\s+/).slice(0, 5)
+  if (words.length === 0) return 'Voice Memo'
+  const title = words.join(' ')
+  return title.length > 40 ? title.slice(0, 37) + '...' : title
+}
 
 function App() {
   const { apiKey, isLoaded } = useApiKey()
@@ -31,6 +46,7 @@ function App() {
   const { setArchiveDialogOpen, theme } = useSettingsStore()
   const [isStarting, setIsStarting] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null)
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | undefined>()
   const [selectedLanguage, setSelectedLanguage] = useState<ScribeLanguageCode>('en')
@@ -38,13 +54,13 @@ function App() {
   // Track if current content has been archived (prevent double archiving)
   const [isArchived, setIsArchived] = useState(false)
   
-  // Action feedback states
-  const [archiveTriggered, setArchiveTriggered] = useState(false)
-  const [copyTriggered, setCopyTriggered] = useState(false)
-  const [clearTriggered, setClearTriggered] = useState(false)
+  // Computer audio mode - enables both mic AND system audio
+  const [computerAudioEnabled, setComputerAudioEnabled] = useState(false)
   
-  // Confirmation dialog for new recording with existing content
-  const [showNewRecordingDialog, setShowNewRecordingDialog] = useState(false)
+  // Multiple speakers toggle for diarization (cannot be changed mid-recording)
+  
+  // Action feedback states
+  const [copyTriggered, setCopyTriggered] = useState(false)
 
   const {
     status,
@@ -68,10 +84,23 @@ function App() {
     },
   })
 
-  // Apply dark theme by default on mount
+  // Apply theme on mount and when it changes
   useEffect(() => {
-    document.documentElement.classList.add('dark')
-  }, [])
+    const root = document.documentElement
+    if (theme === 'dark') {
+      root.classList.add('dark')
+    } else if (theme === 'light') {
+      root.classList.remove('dark')
+    } else {
+      // System preference
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      if (prefersDark) {
+        root.classList.add('dark')
+      } else {
+        root.classList.remove('dark')
+      }
+    }
+  }, [theme])
 
   // Reset archived state when transcript changes
   useEffect(() => {
@@ -83,11 +112,15 @@ function App() {
   // Check if there's existing content before starting new recording
   const hasExistingContent = !!(transcript || partialTranscript)
 
+  // Include isPaused to keep the recording bar in "recording" state when paused
+  const isRecording = isConnected || isTranscribing || isPaused
+  const hasContent = !!(transcript || partialTranscript)
+
   const handleStartRecording = useCallback(async () => {
-    // If there's existing content, show confirmation dialog
+    // Clear any existing content and start fresh
     if (hasExistingContent) {
-      setShowNewRecordingDialog(true)
-      return
+      clearTranscript()
+      setIsArchived(false)
     }
     
     // Start recording directly
@@ -105,68 +138,52 @@ function App() {
     } finally {
       setIsStarting(false)
     }
-  }, [hasExistingContent, start, apiKey])
+  }, [hasExistingContent, start, apiKey, clearTranscript])
 
-  // Start recording after handling existing content
-  const startNewRecording = useCallback(async () => {
-    setShowNewRecordingDialog(false)
-    clearTranscript()
-    setIsArchived(false)
+
+  const handleStopRecording = useCallback(async () => {
+    setIsProcessing(true)
+    stop()
+    setIsPaused(false)
+    setRecordingStartTime(null)
     
-    setIsStarting(true)
-    try {
-      await start()
-      setRecordingStartTime(Date.now())
-      toast.success('Recording started')
-    } finally {
-      setIsStarting(false)
-    }
-  }, [start, clearTranscript])
-
-  // Archive existing content then start new recording
-  const archiveAndStartNew = useCallback(async () => {
-    const textToArchive = transcript || partialTranscript
-    if (textToArchive && !isArchived) {
+    // Get the full transcript text
+    const textToArchive = [transcript, partialTranscript].filter(Boolean).join(' ').trim()
+    
+    if (textToArchive) {
       try {
         await archiveTranscript({
-          title: 'Recording',
+          title: generateTitle(textToArchive),
           text: textToArchive,
           segments,
           speakers: [],
           hasConsent: true,
+          category: 'Note',
+          urgencyLevel: 0,
+          noveltyLevel: 0,
         })
+        
         setIsArchived(true)
-        toast.success('Recording archived')
-        setShowNewRecordingDialog(false)
+        toast.success('Archived!')
       } catch (err) {
         console.error('Failed to archive:', err)
-        toast.error('Failed to archive')
+        toast.error('Archive failed')
       }
+    } else {
+      toast.success('Recording ended')
     }
-  }, [transcript, partialTranscript, segments, isArchived, archiveTranscript])
+    setIsProcessing(false)
+  }, [stop, transcript, partialTranscript, segments, archiveTranscript])
 
-  // Copy existing content then start new recording  
-  const copyAndStartNew = useCallback(async () => {
-    const textToCopy = transcript || partialTranscript
-    if (textToCopy) {
-      try {
-        await navigator.clipboard.writeText(textToCopy)
-        toast.success('Copied to clipboard')
-      } catch (error) {
-        console.error('Failed to copy:', error)
-        toast.error('Failed to copy')
-        return
-      }
-    }
-    
-    await startNewRecording()
-  }, [transcript, partialTranscript, startNewRecording])
-
-  const handleStopRecording = useCallback(() => {
+  // Handler for when max recording time is reached
+  const handleMaxTimeReached = useCallback(() => {
     stop()
     setIsPaused(false)
     setRecordingStartTime(null)
-    toast.success('Recording stopped')
+    toast.warning('Time limit reached - recording stopped automatically', {
+      description: 'Maximum recording time is 1 hour per session.',
+      duration: 5000,
+    })
   }, [stop])
 
   const handlePauseRecording = useCallback(() => {
@@ -191,7 +208,7 @@ function App() {
   }, [stop, clearTranscript])
 
   const handleArchive = useCallback(async () => {
-    const textToArchive = transcript || partialTranscript
+    const textToArchive = [transcript, partialTranscript].filter(Boolean).join(' ').trim()
     if (!textToArchive) {
       toast.error('Nothing to archive')
       return
@@ -203,29 +220,30 @@ function App() {
     }
     
     try {
+      const title = generateTitle(textToArchive)
       await archiveTranscript({
-        title: 'Recording',
+        title,
         text: textToArchive,
         segments,
         speakers: [],
         hasConsent: true,
+        category: 'Note',
+        urgencyLevel: 0,
+        noveltyLevel: 0,
       })
       setIsArchived(true)
-      setArchiveTriggered(true)
-      setTimeout(() => setArchiveTriggered(false), 1500)
-      toast.success('Archived')
+      clearTranscript()
+      toast.success(`Archived: ${title}`)
     } catch (err) {
       console.error('Failed to archive:', err)
       toast.error('Failed to archive')
     }
-  }, [transcript, partialTranscript, segments, isArchived, archiveTranscript])
+  }, [transcript, partialTranscript, segments, isArchived, archiveTranscript, clearTranscript])
 
   const handleClear = useCallback(() => {
     if (!transcript && !partialTranscript) return
     clearTranscript()
     setIsArchived(false)
-    setClearTriggered(true)
-    setTimeout(() => setClearTriggered(false), 1500)
     toast.success('Cleared')
   }, [transcript, partialTranscript, clearTranscript])
 
@@ -257,29 +275,6 @@ function App() {
         return
       }
 
-      // Handle new recording dialog hotkeys
-      if (showNewRecordingDialog) {
-        switch (e.key.toLowerCase()) {
-          case 'escape':
-            e.preventDefault()
-            setShowNewRecordingDialog(false)
-            break
-          case 'a':
-            e.preventDefault()
-            archiveAndStartNew()
-                    break
-          case 'c':
-            e.preventDefault()
-            copyAndStartNew()
-                    break
-          case 'd':
-            e.preventDefault()
-            startNewRecording()
-                    break
-                }
-        return
-      }
-
       // Don't trigger shortcuts when archive dialog is open
       const { archiveDialogOpen } = useSettingsStore.getState()
       
@@ -302,10 +297,14 @@ function App() {
       switch (e.key.toLowerCase()) {
         case 'r':
           e.preventDefault()
+          if (!isConnected) {
+            handleStartRecording()
+          }
+          break
+        case 'e':
+          e.preventDefault()
           if (isConnected) {
             handleStopRecording()
-          } else {
-            handleStartRecording()
           }
           break
         case 'c':
@@ -330,7 +329,8 @@ function App() {
           break
         case 'p':
           e.preventDefault()
-          if (isConnected) {
+          // Use isRecording (which includes isPaused) to allow resume from paused state
+          if (isRecording) {
             if (isPaused) {
               handleResumeRecording()
             } else {
@@ -343,10 +343,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isConnected, isPaused, showNewRecordingDialog, handleStartRecording, handleStopRecording, handlePauseRecording, handleResumeRecording, handleCopy, handleClear, handleArchive, handleDiscard, handleToggleTheme, setArchiveDialogOpen, archiveAndStartNew, copyAndStartNew, startNewRecording])
-
-  const isRecording = isConnected || isTranscribing
-  const hasContent = !!(transcript || partialTranscript)
+  }, [isConnected, isRecording, isPaused, handleStartRecording, handleStopRecording, handlePauseRecording, handleResumeRecording, handleCopy, handleClear, handleArchive, handleDiscard, handleToggleTheme, setArchiveDialogOpen])
 
   // Determine which logos to use based on theme
   const isDark = theme === 'dark' || 
@@ -367,13 +364,13 @@ function App() {
 
       {/* Header with logo and controls */}
       <div 
-        className="relative flex items-center justify-center py-3"
+        className="relative flex items-center justify-center h-14"
         data-tauri-drag-region
       >
         <img 
           src={headerLogo} 
           alt="llMemo" 
-          className="h-5 w-auto"
+          className="h-6 w-auto drop-shadow-sm"
         />
         <div className="absolute right-3 flex items-center gap-1">
           <ArchiveDialog />
@@ -386,13 +383,12 @@ function App() {
         {/* Recording Bar - above waveform */}
         <RecordingBar
           isRecording={isRecording}
-          isPaused={isPaused}
           isLoading={isStarting || status === 'connecting'}
+          isProcessing={isProcessing}
           disabled={!isLoaded}
+          hasContent={hasContent}
           onStartRecording={handleStartRecording}
           onStopRecording={handleStopRecording}
-          onPauseRecording={handlePauseRecording}
-          onResumeRecording={handleResumeRecording}
           selectedDeviceId={selectedDeviceId}
           onDeviceChange={setSelectedDeviceId}
           selectedLanguage={selectedLanguage}
@@ -408,19 +404,81 @@ function App() {
         />
 
         {/* Action Bar */}
-        <div className="flex items-center justify-end gap-3">
-          <ActionBar
-            hasContent={hasContent}
-            isArchived={isArchived}
-            isProcessing={!!partialTranscript && isRecording}
-            onArchive={handleArchive}
-            onCopy={handleCopy}
-            onClear={handleClear}
-            archiveTriggered={archiveTriggered}
-            copyTriggered={copyTriggered}
-            clearTriggered={clearTriggered}
-          />
-        </div>
+        {(
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-4">
+              {/* Computer Audio Toggle - fixed width containers to prevent layout shift */}
+              <TooltipProvider>
+                <div className="flex items-center gap-2">
+                  {/* Left icon - fixed 16px */}
+                  <div className="w-4 h-4 flex items-center justify-center">
+                    <BrandSingleSpeakerIcon 
+                      size={16} 
+                      className={isRecording ? 'text-muted-foreground/50' : 'text-muted-foreground'} 
+                    />
+                  </div>
+                  <Switch
+                    id="computer-audio-toggle"
+                    checked={computerAudioEnabled}
+                    onCheckedChange={setComputerAudioEnabled}
+                    disabled={isRecording}
+                    className="data-[state=checked]:bg-[#2DD28D] h-5 w-9 disabled:opacity-50"
+                  />
+                  {/* Right icon area - tooltip wraps only the computer icon */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="w-[52px] h-4 flex items-center justify-start cursor-help">
+                        {computerAudioEnabled ? (
+                          <div className={`flex items-center gap-0.5 ${
+                            isRecording ? 'text-muted-foreground/50' : 'text-[#2DD28D]'
+                          }`}>
+                            <BrandComputerAudioIcon size={16} />
+                            <span className="text-[10px]">+</span>
+                            <BrandSingleSpeakerIcon size={16} />
+                          </div>
+                        ) : (
+                          <BrandComputerAudioIcon 
+                            size={16} 
+                            className={isRecording ? 'text-muted-foreground/50' : 'text-muted-foreground'} 
+                          />
+                        )}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[240px] text-center">
+                      <p className="text-xs">
+                        {computerAudioEnabled 
+                          ? "Now select a virtual audio device (e.g., BlackHole, Loopback) from the microphone dropdown above to capture computer audio"
+                          : "Capture computer audio by enabling this, then selecting a virtual audio device from the mic dropdown"
+                        }
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
+
+            </div>
+            
+            {/* Copy button - on the right */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCopy}
+              disabled={!hasContent}
+              className={cn(
+                'h-8 px-2 gap-1 transition-all',
+                copyTriggered && 'bg-[#2DD28D]/20'
+              )}
+              aria-label="Copy transcript"
+            >
+              {copyTriggered ? (
+                <BrandCheckIcon size={16} />
+              ) : (
+                <BrandCopyIcon size={16} />
+              )}
+              <Kbd>C</Kbd>
+            </Button>
+          </div>
+        )}
 
         {/* Transcript */}
         <TranscriptBox
@@ -428,21 +486,25 @@ function App() {
           segments={segments}
           partialTranscript={partialTranscript}
           isRecording={isRecording}
+          isPaused={isPaused}
+          isProcessing={isProcessing}
           recordingStartTime={recordingStartTime}
-          onMaxTimeReached={handleStopRecording}
+          onMaxTimeReached={handleMaxTimeReached}
+          onPause={handlePauseRecording}
+          onResume={handleResumeRecording}
         />
       </main>
 
       {/* Footer */}
-      <footer className="relative flex flex-col items-center justify-center px-4 py-3 border-t border-border/30">
-        <div className="text-center leading-relaxed">
-          <p className="text-xs text-muted-foreground">"An agent can carry out tasks, but the final responsibility should always remain with a human."</p>
-          <p className="text-[11px] text-muted-foreground/80 mt-0.5">Policy based on{' '}
+      <footer className="relative flex flex-col items-center justify-center px-4 py-4 border-t border-border/30">
+        <div className="text-center leading-snug">
+          <p className="text-[10px] text-muted-foreground/70">"An agent can carry out tasks, but the final responsibility should always remain with a human."</p>
+          <p className="text-[9px] text-muted-foreground/50 mt-0.5">Policy based on{' '}
             <a
               href="https://linear.app/developers/aig"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline hover:text-muted-foreground transition-colors"
+              className="underline hover:text-muted-foreground/70 transition-colors"
             >
               Linear's framework
             </a>.
@@ -451,63 +513,9 @@ function App() {
         <img 
           src={orbLogo} 
           alt="" 
-          className="absolute right-3 bottom-3 h-6 w-6 rounded-full opacity-60 hover:opacity-100 transition-opacity"
+          className="absolute right-3 bottom-2 h-6 w-6 rounded-full drop-shadow-lg hover:scale-110 transition-transform"
         />
       </footer>
-
-      {/* Confirmation dialog for starting new recording with existing content */}
-      <AlertDialog open={showNewRecordingDialog} onOpenChange={setShowNewRecordingDialog}>
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Existing Recording</AlertDialogTitle>
-            <AlertDialogDescription>
-              You have an existing transcription. What would you like to do with it before starting a new recording?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-            <Button
-              variant="secondary"
-              onClick={copyAndStartNew}
-              className="w-full sm:w-auto gap-2"
-            >
-              <Clipboard className="h-4 w-4" />
-              Copy
-              <kbd className="ml-1 px-1.5 py-0.5 rounded bg-muted/80 border border-border/50 text-[10px] font-medium">C</kbd>
-            </Button>
-            <Button
-              variant="default"
-              onClick={archiveAndStartNew}
-              disabled={isArchived}
-              className="w-full sm:w-auto gap-2"
-            >
-              <Archive className="h-4 w-4" />
-              Archive
-              <kbd className="ml-1 px-1.5 py-0.5 rounded bg-primary/80 border border-primary/50 text-[10px] font-medium text-primary-foreground">A</kbd>
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={startNewRecording}
-              className="w-full sm:w-auto gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete
-              <kbd className="ml-1 px-1.5 py-0.5 rounded bg-destructive/80 border border-destructive/50 text-[10px] font-medium">D</kbd>
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setShowNewRecordingDialog(false)}
-              className="w-full sm:w-auto gap-2"
-            >
-              <X className="h-4 w-4" />
-              Cancel
-              <kbd className="ml-1 px-1.5 py-0.5 rounded bg-muted/80 border border-border/50 text-[10px] font-medium">Esc</kbd>
-            </Button>
-          </AlertDialogFooter>
-          <p className="text-xs text-muted-foreground/60 mt-2 text-center">
-            For privacy, only your voice is archived.
-          </p>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

@@ -11,29 +11,42 @@ export interface TokenError {
 
 export async function fetchToken(apiKey: string): Promise<string> {
   if (!apiKey) {
+    console.error('[Token] No API key provided')
     throw new Error('API key is required')
   }
 
-  const response = await fetch(ELEVENLABS_TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'xi-api-key': apiKey,
-      'Content-Type': 'application/json',
-    },
-  })
+  console.log('[Token] Fetching token from:', ELEVENLABS_TOKEN_URL)
+  console.log('[Token] API key prefix:', apiKey.substring(0, 10) + '...')
 
-  if (!response.ok) {
-    const errorData: TokenError = await response.json().catch(() => ({}))
-    const errorMessage = errorData.detail || errorData.message || `HTTP ${response.status}`
-    throw new Error(`Failed to fetch token: ${errorMessage}`)
+  try {
+    const response = await fetch(ELEVENLABS_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+      },
+    })
+
+    console.log('[Token] Response status:', response.status)
+
+    if (!response.ok) {
+      const errorData: TokenError = await response.json().catch(() => ({}))
+      const errorMessage = errorData.detail || errorData.message || `HTTP ${response.status}`
+      console.error('[Token] Error response:', errorData)
+      throw new Error(`Failed to fetch token: ${errorMessage}`)
+    }
+
+    const data: TokenResponse = await response.json()
+    console.log('[Token] Token received, length:', data.token?.length)
+    
+    if (!data.token) {
+      throw new Error('No token received from API')
+    }
+
+    return data.token
+  } catch (error) {
+    console.error('[Token] Fetch error:', error)
+    throw error
   }
-
-  const data: TokenResponse = await response.json()
-  
-  if (!data.token) {
-    throw new Error('No token received from API')
-  }
-
-  return data.token
 }
 
