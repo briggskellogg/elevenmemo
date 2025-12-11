@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { useScribe, type ScribeStatus } from '@elevenlabs/react'
+import { useScribe, CommitStrategy, type ScribeStatus } from '@elevenlabs/react'
 import { fetchToken } from '@/lib/token'
 
 export interface TranscriptSegment {
@@ -48,10 +48,12 @@ export function useScribeTranscription({
     modelId: 'scribe_v2_realtime',
     languageCode,
     includeTimestamps: true,
-    // Tuned VAD settings for better noise rejection
-    vadThreshold: 0.6, // Higher threshold = less sensitive to quiet sounds
-    minSpeechDurationMs: 250, // Require longer speech to trigger
-    minSilenceDurationMs: 500, // Require longer silence to end segment
+    // VAD-based commit for natural sentence boundaries with punctuation
+    commitStrategy: CommitStrategy.VAD,
+    vadSilenceThresholdSecs: 1.0, // Wait for 1 second pause to commit (better sentence detection)
+    vadThreshold: 0.5, // Standard threshold for voice detection
+    minSpeechDurationMs: 100, // Quick response
+    minSilenceDurationMs: 300, // Standard silence
     microphone: {
       deviceId,
       echoCancellation: true,
