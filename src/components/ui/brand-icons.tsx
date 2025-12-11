@@ -177,24 +177,28 @@ export function BrandCheckIcon({ size = 24, className }: BrandIconProps) {
   )
 }
 
-// Brain/AI icon - for vault access
+// Folder/archive icon - for vault access
 export function BrandHistoryIcon({ size = 24, className }: BrandIconProps) {
   return (
     <svg 
       width={size} 
       height={size} 
-      viewBox="0 0 60 60" 
+      viewBox="0 0 24 24" 
       fill="none" 
       xmlns="http://www.w3.org/2000/svg"
       className={cn('shrink-0', className)}
     >
-      {/* Brain outline */}
-      <path d="M12.5 13.75L22.5 7.5L30 10L37.5 7.5L47.5 13.75V20L52.5 23.75V33.75L47.5 37.5V46.25L37.5 52.5L30 50L22.5 52.5L12.5 46.25V37.5L7.5 33.75V23.75L12.5 20V13.75Z" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-      {/* Neural connections */}
-      <path d="M30 11.25V20L37.5 27.5M30 48.75V40L22.5 32.5" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-      {/* Nodes */}
-      <circle cx="22.5" cy="32.5" r="2.5" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-      <circle cx="37.5" cy="27.5" r="2.5" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+      {/* Folder shape */}
+      <path 
+        d="M3 6C3 4.89543 3.89543 4 5 4H9L11 6H19C20.1046 6 21 6.89543 21 8V18C21 19.1046 20.1046 20 19 20H5C3.89543 20 3 19.1046 3 18V6Z" 
+        stroke="currentColor" 
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+      {/* Horizontal lines inside */}
+      <path d="M8 12H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 16H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
 }

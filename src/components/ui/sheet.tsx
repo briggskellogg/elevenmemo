@@ -74,7 +74,7 @@ function SheetContent({
         {children}
         {/* Close button with ESC badge */}
         <div className="absolute top-[21px] right-[21px] flex items-center gap-2">
-          <kbd className="inline-flex items-center justify-center px-2 py-1 rounded-md bg-background/60 border border-border/40 text-[10px] font-medium text-muted-foreground/80 backdrop-blur-sm">
+          <kbd className="inline-flex items-center justify-center px-[6px] py-[2px] rounded-[4px] bg-background/60 border border-border/40 text-[10px] font-medium text-muted-foreground/80 backdrop-blur-sm">
             ESC
           </kbd>
           <SheetPrimitive.Close className="ring-offset-background focus:ring-ring rounded-lg p-2 opacity-60 transition-all hover:opacity-100 hover:bg-muted focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">

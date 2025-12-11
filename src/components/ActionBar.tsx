@@ -8,9 +8,9 @@ import {
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <kbd className={cn(
-      'inline-flex items-center justify-center px-1.5 py-0.5 rounded-md',
+      'inline-flex items-center justify-center px-[6px] py-[2px] rounded-[4px]',
       'bg-background/60 border border-border/40 text-[10px] font-medium text-muted-foreground/80',
-      'min-w-[20px] backdrop-blur-sm',
+      'min-w-[18px] min-h-[18px] backdrop-blur-sm',
       className
     )}>
       {children}

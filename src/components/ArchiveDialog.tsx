@@ -55,9 +55,9 @@ async function authenticateWithBiometric(): Promise<boolean> {
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <kbd className={cn(
-      'inline-flex items-center justify-center px-1.5 py-0.5 rounded-md',
+      'inline-flex items-center justify-center px-[6px] py-[2px] rounded-[4px]',
       'bg-background/60 border border-border/40 text-[10px] font-medium text-muted-foreground/80',
-      'min-w-[20px] backdrop-blur-sm',
+      'min-w-[18px] min-h-[18px] backdrop-blur-sm',
       className
     )}>
       {children}
@@ -421,41 +421,44 @@ export function ArchiveDialog() {
             </div>
           </SheetHeader>
 
-          {/* Search bar */}
-          <div className="relative mb-[13px] w-full">
-            <div className="absolute left-[13px] top-1/2 -translate-y-1/2">
-              <BrandSearchIcon size={18} className="opacity-40" />
+          {/* Search bar and filter row */}
+          <div className="flex items-center gap-3 mb-[21px]">
+            {/* Search bar - takes remaining space */}
+            <div className="relative flex-1">
+              <div className="absolute left-[13px] top-1/2 -translate-y-1/2">
+                <BrandSearchIcon size={18} className="opacity-40" />
+              </div>
+              <Input
+                id="archive-search"
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-[42px] pr-[42px] w-full h-[42px] rounded-xl bg-muted/30 border-border/30 text-[14px] placeholder:text-muted-foreground/40"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-[13px] top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground transition-colors"
+                >
+                  <BrandCloseIcon size={16} />
+                </button>
+              )}
             </div>
-            <Input
-              id="archive-search"
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-[42px] pr-[42px] w-full h-[42px] rounded-xl bg-muted/30 border-border/30 text-[14px] placeholder:text-muted-foreground/40"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-[13px] top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground transition-colors"
-              >
-                <BrandCloseIcon size={16} />
-              </button>
-            )}
-          </div>
 
-          {/* Filter - starred toggle */}
-          <div className="flex items-center gap-2 mb-[21px]">
-            <Switch
-              id="starred-filter"
-              checked={showImportantOnly}
-              onCheckedChange={setShowImportantOnly}
-              className="data-[state=checked]:bg-amber-500"
-            />
-            <Star className={cn(
-              "h-4 w-4 transition-colors",
-              showImportantOnly ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"
-            )} />
+            {/* Starred filter toggle - fixed width container */}
+            <div className="flex items-center gap-2 shrink-0 w-[70px]">
+              <Switch
+                id="starred-filter"
+                checked={showImportantOnly}
+                onCheckedChange={setShowImportantOnly}
+                className="data-[state=checked]:bg-amber-500"
+              />
+              <Star className={cn(
+                "h-4 w-4 transition-colors",
+                showImportantOnly ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"
+              )} />
+            </div>
           </div>
 
           {/* Content */}
@@ -538,57 +541,60 @@ export function ArchiveDialog() {
                         {/* Spacer */}
                         <div className="flex-1" />
 
-                        {/* Star button */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className={cn(
-                            "h-[28px] w-[28px] p-0 rounded-lg shrink-0",
-                            transcript.isImportant && "text-amber-400"
-                          )}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            updateTranscript(transcript.id, { isImportant: !transcript.isImportant })
-                          }}
-                          aria-label={transcript.isImportant ? "Unmark" : "Mark important"}
-                        >
-                          <Star 
+                        {/* Action buttons - tighter spacing */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {/* Star button */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             className={cn(
-                              "h-4 w-4",
-                              transcript.isImportant && "fill-amber-400"
-                            )} 
-                          />
-                        </Button>
+                              "h-[28px] w-[28px] p-0 rounded-lg",
+                              transcript.isImportant && "text-amber-400"
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              updateTranscript(transcript.id, { isImportant: !transcript.isImportant })
+                            }}
+                            aria-label={transcript.isImportant ? "Unmark" : "Mark important"}
+                          >
+                            <Star 
+                              className={cn(
+                                "h-4 w-4",
+                                transcript.isImportant && "fill-amber-400"
+                              )} 
+                            />
+                          </Button>
 
-                        {/* Copy button */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-[28px] px-2 gap-1.5 rounded-lg shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            copyTranscript(transcript.text)
-                          }}
-                          aria-label="Copy"
-                        >
-                          <BrandCopyIcon size={15} />
-                          <Kbd>C</Kbd>
-                        </Button>
+                          {/* Copy button */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-[28px] px-2 gap-1 rounded-lg"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              copyTranscript(transcript.text)
+                            }}
+                            aria-label="Copy"
+                          >
+                            <BrandCopyIcon size={15} />
+                            <Kbd>C</Kbd>
+                          </Button>
 
-                        {/* Delete button */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-[28px] px-2 gap-1.5 rounded-lg shrink-0 hover:bg-destructive/10 hover:text-destructive"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDelete(transcript.id)
-                          }}
-                          aria-label="Delete"
-                        >
-                          <BrandTrashIcon size={15} />
-                          <Kbd>D</Kbd>
-                        </Button>
+                          {/* Delete button */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-[28px] px-2 gap-1 rounded-lg hover:bg-destructive/10 hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDelete(transcript.id)
+                            }}
+                            aria-label="Delete"
+                          >
+                            <BrandTrashIcon size={15} />
+                            <Kbd>D</Kbd>
+                          </Button>
+                        </div>
                       </div>
 
                       {/* Date */}
