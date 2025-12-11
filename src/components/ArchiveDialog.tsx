@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   BrandHistoryIcon,
   BrandSearchIcon,
@@ -6,8 +6,9 @@ import {
   BrandCopyIcon,
   BrandTrashIcon,
   EmptyArchiveIcon,
+  ShieldIcon,
 } from '@/components/ui/brand-icons'
-import { Download, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Download, ChevronLeft, ChevronRight, Star } from 'lucide-react'
 import {
   Sheet,
   SheetContent,
@@ -17,21 +18,46 @@ import {
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  CategoryTag,
-  CategorySelector,
-} from '@/components/ui/category-tag'
+import { Switch } from '@/components/ui/switch'
+import { CategoryTag, CategorySelector } from '@/components/ui/category-tag'
 import { useSettingsStore } from '@/store/settings'
 import { useArchive } from '@/hooks/useArchive'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
+// Auth expiration time (5 minutes)
+const AUTH_EXPIRATION_MS = 5 * 60 * 1000
+
+// Check if running in Tauri
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI__' in window
+}
+
+// Biometric authentication helper using custom Tauri command
+async function authenticateWithBiometric(): Promise<boolean> {
+  if (!isTauri()) {
+    console.log('[Biometric] Not in Tauri, skipping auth')
+    return true // Allow access in dev mode
+  }
+  
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const result = await invoke<boolean>('authenticate_biometric', {
+      reason: 'ElevenMemo requires authentication to access your saved memos.'
+    })
+    return result
+  } catch (e) {
+    console.error('[Biometric] Authentication failed:', e)
+    return false
+  }
+}
+
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <kbd className={cn(
-      'inline-flex items-center justify-center px-1.5 py-0.5 rounded',
-      'bg-muted/80 border border-border/50 text-[10px] font-medium text-muted-foreground',
-      'min-w-[18px]',
+      'inline-flex items-center justify-center px-1.5 py-0.5 rounded-md',
+      'bg-background/60 border border-border/40 text-[10px] font-medium text-muted-foreground/80',
+      'min-w-[20px] backdrop-blur-sm',
       className
     )}>
       {children}
@@ -49,7 +75,7 @@ function formatDate(timestamp: number): string {
     minute: '2-digit',
     hour12: true 
   })
-  return `${month} ${day}, ${year}, ${time}`
+  return `${month} ${day}, ${year} · ${time}`
 }
 
 function truncateText(text: string, maxLength = 150): string {
@@ -57,7 +83,7 @@ function truncateText(text: string, maxLength = 150): string {
   return text.slice(0, maxLength).trim() + '...'
 }
 
-const ITEMS_PER_PAGE = 10
+const ITEMS_PER_PAGE = 8
 
 export function ArchiveDialog() {
   const { archiveDialogOpen, setArchiveDialogOpen } = useSettingsStore()
@@ -69,9 +95,87 @@ export function ArchiveDialog() {
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null)
   const [editingTitleValue, setEditingTitleValue] = useState('')
   const [currentPage, setCurrentPage] = useState(0)
+  const [showImportantOnly, setShowImportantOnly] = useState(false)
+  
+  // Biometric auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
+  const authTimestampRef = useRef<number>(0)
+  
+  // Check if auth has expired
+  const isAuthExpired = useCallback(() => {
+    if (!isAuthenticated) return true
+    return Date.now() - authTimestampRef.current > AUTH_EXPIRATION_MS
+  }, [isAuthenticated])
+  
+  // Reset auth when page becomes hidden (screen lock, tab switch, etc.)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Page is hidden - reset auth after a short delay (in case user is just alt-tabbing briefly)
+        const timeout = setTimeout(() => {
+          if (document.hidden) {
+            console.log('[Vault] Page hidden, resetting authentication')
+            setIsAuthenticated(false)
+            authTimestampRef.current = 0
+          }
+        }, 3000) // 3 second grace period
+        return () => clearTimeout(timeout)
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
+  
+  // Authenticate and open dialog
+  const handleOpenVault = useCallback(async () => {
+    // Check if already authenticated and not expired
+    if (isAuthenticated && !isAuthExpired()) {
+      setArchiveDialogOpen(true)
+      return
+    }
+    
+    setIsAuthenticating(true)
+    
+    try {
+      const success = await authenticateWithBiometric()
+      if (success) {
+        setIsAuthenticated(true)
+        authTimestampRef.current = Date.now()
+        setArchiveDialogOpen(true)
+      } else {
+        toast.error('Authentication failed')
+      }
+    } catch (error) {
+      console.error('[Vault] Auth error:', error)
+      toast.error('Failed to authenticate')
+    } finally {
+      setIsAuthenticating(false)
+    }
+  }, [isAuthenticated, isAuthExpired, setArchiveDialogOpen])
+  
+  // Handle dialog open/close with auth check
+  const handleDialogChange = useCallback((open: boolean) => {
+    if (!open) {
+      setArchiveDialogOpen(false)
+    }
+  }, [setArchiveDialogOpen])
+  
+  // Intercept programmatic opens (V hotkey) and require auth
+  useEffect(() => {
+    if (archiveDialogOpen && (!isAuthenticated || isAuthExpired()) && !isAuthenticating) {
+      setArchiveDialogOpen(false)
+      handleOpenVault()
+    }
+  }, [archiveDialogOpen, isAuthenticated, isAuthExpired, isAuthenticating, setArchiveDialogOpen, handleOpenVault])
 
-  // Filter transcripts based on search
+  // Filter transcripts based on search and important
   const filteredTranscripts = archivedTranscripts.filter(t => {
+    // Important filter
+    if (showImportantOnly && !t.isImportant) return false
+    
+    // Search filter
     if (!searchQuery.trim()) return true
     const query = searchQuery.toLowerCase()
     return (
@@ -88,12 +192,13 @@ export function ArchiveDialog() {
     (currentPage + 1) * ITEMS_PER_PAGE
   )
 
-  // Reset selection when dialog opens/closes or search changes
+  // Reset selection and filters when dialog opens/closes
   useEffect(() => {
     if (archiveDialogOpen) {
       setSelectedIndex(0)
       setSearchQuery('')
       setCurrentPage(0)
+      setShowImportantOnly(false)
     }
   }, [archiveDialogOpen])
 
@@ -261,36 +366,37 @@ export function ArchiveDialog() {
   }, [archiveDialogOpen, paginatedTranscripts, selectedIndex, expandedId, copyTranscript, handleDelete, setArchiveDialogOpen, searchQuery, showCategorySelector, currentPage, totalPages, editingTitleId])
 
   return (
-    <Sheet open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
+    <Sheet open={archiveDialogOpen} onOpenChange={handleDialogChange}>
       <SheetTrigger asChild>
         <Button
           variant="ghost"
           size="sm"
-          className="h-9 px-2 gap-1.5"
-          aria-label="Archive"
+          className="h-[34px] px-3 gap-2 rounded-lg"
+          aria-label="Vault"
+          onClick={(e) => {
+            e.preventDefault()
+            handleOpenVault()
+          }}
+          disabled={isAuthenticating}
         >
-          <BrandHistoryIcon size={21} />
-          <Kbd>H</Kbd>
+          {isAuthenticating ? (
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          ) : (
+            <BrandHistoryIcon size={20} className="opacity-70" />
+          )}
+          <Kbd>V</Kbd>
         </Button>
       </SheetTrigger>
       <SheetContent 
         side="bottom" 
-        className="h-[75vh] rounded-t-2xl border-t-2 border-border shadow-2xl bg-background/95 backdrop-blur-sm"
+        className="h-[80vh] rounded-t-3xl border-t border-border/30 shadow-2xl bg-background/98 backdrop-blur-xl"
       >
-        <div className="h-full flex flex-col px-6 sm:px-10 max-w-4xl mx-auto pt-4">
-          {/* Close button with ESC hint */}
-          <button
-            onClick={() => setArchiveDialogOpen(false)}
-            className="absolute top-4 left-4 flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <BrandCloseIcon size={18} />
-            <Kbd>ESC</Kbd>
-          </button>
-
-          <SheetHeader className="pb-4">
-            <div className="flex items-center justify-center gap-3">
-              <SheetTitle className="text-xl">
-                Archive
+        <div className="h-full flex flex-col px-[34px] sm:px-[55px] max-w-3xl mx-auto pt-[13px]">
+          {/* Header */}
+          <SheetHeader className="pb-[21px]">
+            <div className="flex items-center justify-center gap-[13px]">
+              <SheetTitle className="text-[21px] font-medium tracking-tight">
+                Vault
               </SheetTitle>
               {archivedTranscripts.length > 0 && (
                 <Button
@@ -299,168 +405,204 @@ export function ArchiveDialog() {
                   onClick={async () => {
                     try {
                       await exportToCSV()
-                      toast.success(`Exported ${archivedTranscripts.length} transcripts to CSV`)
+                      toast.success(`Exported ${archivedTranscripts.length} transcripts`)
                     } catch (error) {
                       console.error('Export failed:', error)
                       toast.error('Failed to export')
                     }
                   }}
-                  className="h-8 gap-1.5 px-2.5 text-xs font-medium border-[#2DD28D]/40 text-[#2DD28D] hover:bg-[#2DD28D]/10 hover:border-[#2DD28D]/60 hover:text-[#2DD28D] transition-colors"
+                  className="h-[28px] gap-2 px-3 text-[11px] font-medium rounded-lg border-[#2DD28D]/30 text-[#2DD28D] hover:bg-[#2DD28D]/10 hover:border-[#2DD28D]/50 transition-colors"
                   aria-label="Export all transcripts to CSV"
-                  title="Export to CSV"
                 >
-                  <Download className="h-3.5 w-3.5" />
-                  <span className="text-[10px] font-semibold">CSV</span>
+                  <Download className="h-3 w-3" />
+                  Export
                 </Button>
               )}
             </div>
           </SheetHeader>
 
-          {/* Search bar - fixed width */}
-          <div className="relative mb-4 w-full">
-            <div className="absolute left-2 top-1/2 -translate-y-1/2">
-              <BrandSearchIcon size={19} />
+          {/* Search bar */}
+          <div className="relative mb-[13px] w-full">
+            <div className="absolute left-[13px] top-1/2 -translate-y-1/2">
+              <BrandSearchIcon size={18} className="opacity-40" />
             </div>
             <Input
               id="archive-search"
               type="text"
-              placeholder="Search transcripts..."
+              placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-10 w-full"
+              className="pl-[42px] pr-[42px] w-full h-[42px] rounded-xl bg-muted/30 border-border/30 text-[14px] placeholder:text-muted-foreground/40"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-[13px] top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground transition-colors"
               >
-                <BrandCloseIcon size={17} />
+                <BrandCloseIcon size={16} />
               </button>
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto -mx-6 sm:-mx-10 px-6 sm:px-10">
+          {/* Filter - starred toggle */}
+          <div className="flex items-center gap-2 mb-[21px]">
+            <Switch
+              id="starred-filter"
+              checked={showImportantOnly}
+              onCheckedChange={setShowImportantOnly}
+              className="data-[state=checked]:bg-amber-500"
+            />
+            <Star className={cn(
+              "h-4 w-4 transition-colors",
+              showImportantOnly ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"
+            )} />
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto -mx-[34px] sm:-mx-[55px] px-[34px] sm:px-[55px]">
             {filteredTranscripts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-center">
-                <EmptyArchiveIcon size={64} className="text-muted-foreground/30 mb-4" />
-                <p className="text-xs text-muted-foreground/40">
-                  {searchQuery ? 'No matches' : 'No transcripts'}
+              <div className="flex flex-col items-center justify-center py-[89px] text-center">
+                <EmptyArchiveIcon size={55} className="text-muted-foreground/15 mb-[21px]" />
+                <p className="text-[13px] text-muted-foreground/30 tracking-wide">
+                  {searchQuery ? 'No matches found' : 'Nothing here yet'}
                 </p>
               </div>
             ) : (
-              <div className="space-y-3 pb-8">
+              <div className="space-y-[13px] pb-[34px]">
                 {paginatedTranscripts.map((transcript, index) => {
                   return (
                     <div
                       key={transcript.id}
                       className={cn(
-                        'rounded-xl border-2 bg-card p-4 transition-all cursor-pointer',
+                        'rounded-2xl border bg-card/50 p-[21px] transition-all duration-200 cursor-pointer',
                         selectedIndex === index 
-                          ? 'border-primary shadow-lg shadow-primary/10' 
-                          : 'border-border/50 hover:border-border',
+                          ? 'border-primary/50 shadow-lg shadow-primary/5 bg-card' 
+                          : 'border-border/30 hover:border-border/50 hover:bg-card/80',
                       )}
                       onClick={() => {
                         setSelectedIndex(index)
                         setExpandedId(expandedId === transcript.id ? null : transcript.id)
                       }}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          {/* Title row with category and indicators */}
-                          <div className="flex items-center gap-2 mb-1.5">
-                            {/* Editable Title */}
-                            {editingTitleId === transcript.id ? (
-                              <Input
-                                value={editingTitleValue}
-                                onChange={(e) => setEditingTitleValue(e.target.value)}
-                                onKeyDown={(e) => handleTitleKeyDown(e, transcript.id)}
-                                onBlur={() => handleTitleSave(transcript.id)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="h-6 text-sm font-medium px-1 py-0 w-auto min-w-[100px] max-w-[200px]"
-                                autoFocus
-                              />
-                            ) : (
-                              <h3 
-                                className="font-medium text-sm truncate cursor-text hover:bg-muted/50 px-1 py-0.5 -mx-1 rounded"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleTitleEdit(transcript.id, transcript.title || '')
-                                }}
-                                title="Click to edit title"
-                              >
-                                {transcript.title || 'Untitled'}
-                              </h3>
-                            )}
-                            
-                            {/* Category pill tag - clickable to change */}
-                            <div className="relative" onClick={(e) => e.stopPropagation()}>
-                              <CategoryTag
-                                category={transcript.category || 'Note'}
-                                size="sm"
-                                onClick={() => setShowCategorySelector(
-                                  showCategorySelector === transcript.id ? null : transcript.id
-                                )}
-                              />
-                              
-                              {/* Category selector dropdown */}
-                              {showCategorySelector === transcript.id && (
-                                <div className="absolute top-full left-0 mt-1 p-2 bg-popover border border-border rounded-lg shadow-lg z-10 min-w-[200px]">
-                                  <CategorySelector
-                                    value={transcript.category || 'Note'}
-                                    onChange={(cat) => {
-                                      handleCategoryChange(transcript.id, cat)
-                                      setShowCategorySelector(null)
-                                    }}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Date */}
-                          <div className="mb-2 text-[11px] text-muted-foreground/60">
-                            <span>{formatDate(transcript.createdAt)}</span>
-                          </div>
-                          
-                          {/* Transcript text */}
-                          <p className="text-sm leading-relaxed text-foreground/80">
-                            {expandedId === transcript.id
-                              ? transcript.text
-                              : truncateText(transcript.text)
-                            }
-                          </p>
-                        </div>
+                      {/* Header row - all items aligned horizontally */}
+                      <div className="flex items-center gap-3 mb-[8px]">
+                        {/* Editable Title */}
+                        {editingTitleId === transcript.id ? (
+                          <Input
+                            value={editingTitleValue}
+                            onChange={(e) => setEditingTitleValue(e.target.value)}
+                            onKeyDown={(e) => handleTitleKeyDown(e, transcript.id)}
+                            onBlur={() => handleTitleSave(transcript.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-[28px] text-[14px] font-medium px-2 py-0 w-auto min-w-[100px] max-w-[200px] rounded-lg"
+                            autoFocus
+                          />
+                        ) : (
+                          <h3 
+                            className="font-medium text-[14px] truncate cursor-text hover:bg-muted/30 px-2 py-1 -mx-2 rounded-lg transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleTitleEdit(transcript.id, transcript.title || '')
+                            }}
+                            title="Click to edit"
+                          >
+                            {transcript.title || 'Untitled'}
+                          </h3>
+                        )}
                         
-                        {/* Action buttons with hotkey hints */}
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Button
-                            variant="ghost"
+                        {/* Category tag */}
+                        <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <CategoryTag
+                            category={transcript.category || 'Note'}
                             size="sm"
-                            className="h-8 px-2 gap-1"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              copyTranscript(transcript.text)
-                            }}
-                            aria-label="Copy transcript"
-                          >
-                            <BrandCopyIcon size={17} />
-                            <Kbd>C</Kbd>
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 px-2 gap-1 hover:bg-destructive/10"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleDelete(transcript.id)
-                            }}
-                            aria-label="Delete transcript"
-                          >
-                            <BrandTrashIcon size={17} />
-                            <Kbd>D</Kbd>
-                          </Button>
+                            showLabel={true}
+                            onClick={() => setShowCategorySelector(
+                              showCategorySelector === transcript.id ? null : transcript.id
+                            )}
+                          />
+                          
+                          {/* Category selector dropdown */}
+                          {showCategorySelector === transcript.id && (
+                            <div className="absolute top-full left-0 mt-2 p-3 bg-popover border border-border/50 rounded-xl shadow-lg z-10 min-w-[200px]">
+                              <CategorySelector
+                                value={transcript.category || 'Note'}
+                                onChange={(cat) => {
+                                  handleCategoryChange(transcript.id, cat)
+                                  setShowCategorySelector(null)
+                                }}
+                              />
+                            </div>
+                          )}
                         </div>
+
+                        {/* Spacer */}
+                        <div className="flex-1" />
+
+                        {/* Star button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={cn(
+                            "h-[28px] w-[28px] p-0 rounded-lg shrink-0",
+                            transcript.isImportant && "text-amber-400"
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            updateTranscript(transcript.id, { isImportant: !transcript.isImportant })
+                          }}
+                          aria-label={transcript.isImportant ? "Unmark" : "Mark important"}
+                        >
+                          <Star 
+                            className={cn(
+                              "h-4 w-4",
+                              transcript.isImportant && "fill-amber-400"
+                            )} 
+                          />
+                        </Button>
+
+                        {/* Copy button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-[28px] px-2 gap-1.5 rounded-lg shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            copyTranscript(transcript.text)
+                          }}
+                          aria-label="Copy"
+                        >
+                          <BrandCopyIcon size={15} />
+                          <Kbd>C</Kbd>
+                        </Button>
+
+                        {/* Delete button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-[28px] px-2 gap-1.5 rounded-lg shrink-0 hover:bg-destructive/10 hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDelete(transcript.id)
+                          }}
+                          aria-label="Delete"
+                        >
+                          <BrandTrashIcon size={15} />
+                          <Kbd>D</Kbd>
+                        </Button>
                       </div>
+
+                      {/* Date */}
+                      <div className="mb-[13px] text-[11px] text-muted-foreground/40 tracking-wide">
+                        {formatDate(transcript.createdAt)}
+                      </div>
+                      
+                      {/* Transcript text */}
+                      <p className="text-[14px] leading-[1.7] text-foreground/70">
+                        {expandedId === transcript.id
+                          ? transcript.text
+                          : truncateText(transcript.text)
+                        }
+                      </p>
                     </div>
                   )
                 })}
@@ -470,7 +612,7 @@ export function ArchiveDialog() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-4 py-4 border-t border-border/50">
+            <div className="flex items-center justify-center gap-[21px] py-[13px] border-t border-border/20">
               <Button
                 variant="ghost"
                 size="sm"
@@ -479,13 +621,13 @@ export function ArchiveDialog() {
                   setSelectedIndex(0)
                 }}
                 disabled={currentPage === 0}
-                className="h-8 px-2 gap-1"
+                className="h-[32px] px-3 gap-2 rounded-lg"
               >
                 <ChevronLeft className="h-4 w-4" />
-                <span className="text-xs">Prev</span>
+                <span className="text-[12px]">Prev</span>
               </Button>
-              <span className="text-sm text-muted-foreground">
-                Page {currentPage + 1} of {totalPages}
+              <span className="text-[12px] text-muted-foreground/60 tabular-nums">
+                {currentPage + 1} / {totalPages}
               </span>
               <Button
                 variant="ghost"
@@ -495,13 +637,21 @@ export function ArchiveDialog() {
                   setSelectedIndex(0)
                 }}
                 disabled={currentPage === totalPages - 1}
-                className="h-8 px-2 gap-1"
+                className="h-[32px] px-3 gap-2 rounded-lg"
               >
-                <span className="text-xs">Next</span>
+                <span className="text-[12px]">Next</span>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
           )}
+
+          {/* Footer */}
+          <div className="flex items-center justify-center gap-2 py-[13px] border-t border-border/20">
+            <ShieldIcon size={13} className="text-[#2DD28D]/60" />
+            <span className="text-[10px] text-muted-foreground/40 tracking-wide">
+              All data stored locally on your device
+            </span>
+          </div>
         </div>
       </SheetContent>
     </Sheet>

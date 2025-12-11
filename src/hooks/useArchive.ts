@@ -1,114 +1,72 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { useSettingsStore, type ArchivedTranscript, type ArchivedSpeaker } from '@/store/settings'
-import { transcriptsToCSV, csvToTranscripts, transcriptsToExportCSV, downloadCSV } from '@/lib/csv'
+import { transcriptsToExportCSV, downloadCSV } from '@/lib/csv'
+import { analyzeTranscript } from '@/lib/claude'
 import type { TranscriptSegment } from '@/hooks/useScribeTranscription'
 
-// File paths for CSV storage
-const CSV_FILENAME = 'elevenmemo-archive.csv'
-const CATEGORIES_FILENAME = 'elevenmemo-categories.json'
-
 // localStorage keys as fallback
-const LOCALSTORAGE_CSV_KEY = 'elevenmemo-archive-csv'
-const LOCALSTORAGE_CATEGORIES_KEY = 'elevenmemo-categories'
+const STORAGE_KEY = 'elevenmemo-archive'
+const CATEGORIES_KEY = 'elevenmemo-categories'
 
 // Check if running in Tauri
 function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI__' in window
 }
 
-// Tauri file system helpers
-async function getTauriFS() {
-  const { writeTextFile, readTextFile, BaseDirectory, exists, mkdir } = await import('@tauri-apps/plugin-fs')
-  return { writeTextFile, readTextFile, BaseDirectory, exists, mkdir }
+// Tauri Store helpers
+async function getTauriStore() {
+  const { load } = await import('@tauri-apps/plugin-store')
+  return await load('archive.json')
 }
 
-async function ensureAppDataDir() {
-  const fs = await getTauriFS()
-  const dirExists = await fs.exists('', { baseDir: fs.BaseDirectory.AppData })
-  if (!dirExists) {
-    await fs.mkdir('', { baseDir: fs.BaseDirectory.AppData, recursive: true })
+// Load from Tauri store
+async function loadFromTauriStore(): Promise<{ transcripts: ArchivedTranscript[]; categories: string[] }> {
+  try {
+    const store = await getTauriStore()
+    const transcripts = await store.get<ArchivedTranscript[]>('transcripts') || []
+    const categories = await store.get<string[]>('categories') || []
+    console.log('[Archive] Loaded from Tauri store:', transcripts.length, 'transcripts')
+    return { transcripts, categories }
+  } catch (e) {
+    console.error('[Archive] Failed to load from Tauri store:', e)
+    return { transcripts: [], categories: [] }
   }
 }
 
-// Read CSV from Tauri file system
-async function readCSVFromTauri(): Promise<string> {
+// Save to Tauri store
+async function saveToTauriStore(transcripts: ArchivedTranscript[], categories: string[]): Promise<void> {
   try {
-    const fs = await getTauriFS()
-    await ensureAppDataDir()
-    const fileExists = await fs.exists(CSV_FILENAME, { baseDir: fs.BaseDirectory.AppData })
-    if (!fileExists) {
-      console.log('[Archive] No CSV file found, starting fresh')
-      return ''
-    }
-    const content = await fs.readTextFile(CSV_FILENAME, { baseDir: fs.BaseDirectory.AppData })
-    console.log('[Archive] Read CSV from Tauri:', content.split('\n').length - 1, 'rows')
-    return content
+    const store = await getTauriStore()
+    await store.set('transcripts', transcripts)
+    await store.set('categories', categories)
+    await store.save()
+    console.log('[Archive] Saved to Tauri store:', transcripts.length, 'transcripts')
   } catch (e) {
-    console.error('[Archive] Failed to read CSV from Tauri:', e)
-    return ''
-  }
-}
-
-// Write CSV to Tauri file system
-async function writeCSVToTauri(csv: string): Promise<void> {
-  try {
-    const fs = await getTauriFS()
-    await ensureAppDataDir()
-    await fs.writeTextFile(CSV_FILENAME, csv, { baseDir: fs.BaseDirectory.AppData })
-    console.log('[Archive] Wrote CSV to Tauri:', csv.split('\n').length - 1, 'rows')
-  } catch (e) {
-    console.error('[Archive] Failed to write CSV to Tauri:', e)
+    console.error('[Archive] Failed to save to Tauri store:', e)
     throw e
   }
 }
 
-// Read categories from Tauri file system
-async function readCategoriesFromTauri(): Promise<string[]> {
-  try {
-    const fs = await getTauriFS()
-    const fileExists = await fs.exists(CATEGORIES_FILENAME, { baseDir: fs.BaseDirectory.AppData })
-    if (!fileExists) {
-      return []
-    }
-    const content = await fs.readTextFile(CATEGORIES_FILENAME, { baseDir: fs.BaseDirectory.AppData })
-    return JSON.parse(content)
-  } catch (e) {
-    console.error('[Archive] Failed to read categories from Tauri:', e)
-    return []
-  }
-}
-
-// Write categories to Tauri file system
-async function writeCategoriesToTauri(categories: string[]): Promise<void> {
-  try {
-    const fs = await getTauriFS()
-    await ensureAppDataDir()
-    await fs.writeTextFile(CATEGORIES_FILENAME, JSON.stringify(categories), { baseDir: fs.BaseDirectory.AppData })
-  } catch (e) {
-    console.error('[Archive] Failed to write categories to Tauri:', e)
-  }
-}
-
 // localStorage fallback for development (non-Tauri)
-function loadFromLocalStorage(): { csv: string; categories: string[] } {
+function loadFromLocalStorage(): { transcripts: ArchivedTranscript[]; categories: string[] } {
   try {
-    const csv = localStorage.getItem(LOCALSTORAGE_CSV_KEY) || ''
-    const categoriesJson = localStorage.getItem(LOCALSTORAGE_CATEGORIES_KEY)
+    const data = localStorage.getItem(STORAGE_KEY)
+    const categoriesData = localStorage.getItem(CATEGORIES_KEY)
     return {
-      csv,
-      categories: categoriesJson ? JSON.parse(categoriesJson) : [],
+      transcripts: data ? JSON.parse(data) : [],
+      categories: categoriesData ? JSON.parse(categoriesData) : [],
     }
   } catch (e) {
     console.error('[Archive] Failed to load from localStorage:', e)
-    return { csv: '', categories: [] }
+    return { transcripts: [], categories: [] }
   }
 }
 
-function saveToLocalStorage(csv: string, categories: string[]): void {
+function saveToLocalStorage(transcripts: ArchivedTranscript[], categories: string[]): void {
   try {
-    localStorage.setItem(LOCALSTORAGE_CSV_KEY, csv)
-    localStorage.setItem(LOCALSTORAGE_CATEGORIES_KEY, JSON.stringify(categories))
-    console.log('[Archive] Saved to localStorage')
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(transcripts))
+    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories))
+    console.log('[Archive] Saved to localStorage:', transcripts.length, 'transcripts')
   } catch (e) {
     console.error('[Archive] Failed to save to localStorage:', e)
   }
@@ -120,10 +78,7 @@ export interface ArchiveTranscriptInput {
   segments: TranscriptSegment[]
   speakers: ArchivedSpeaker[]
   hasConsent: boolean
-  // AI-generated analysis
   category?: string
-  urgencyLevel?: number
-  noveltyLevel?: number
 }
 
 export function useArchive() {
@@ -138,48 +93,50 @@ export function useArchive() {
     customCategories,
     setCustomCategories,
     addCustomCategory: addCustomCategoryToStore,
+    anthropicApiKey,
   } = useSettingsStore()
 
-  // Load archived transcripts from CSV on mount
+  // Use a ref to track the latest transcripts for persistence
+  const transcriptsRef = useRef(archivedTranscripts)
+  const categoriesRef = useRef(customCategories)
+  
+  // Keep refs updated
+  useEffect(() => {
+    transcriptsRef.current = archivedTranscripts
+  }, [archivedTranscripts])
+  
+  useEffect(() => {
+    categoriesRef.current = customCategories
+  }, [customCategories])
+
+  // Load archived transcripts on mount
   useEffect(() => {
     async function loadArchive() {
       try {
+        let transcripts: ArchivedTranscript[] = []
+        let categories: string[] = []
+        
         if (isTauri()) {
-          console.log('[Archive] Loading from Tauri CSV file...')
-          const csv = await readCSVFromTauri()
-          
-          if (csv) {
-            const transcripts = csvToTranscripts(csv)
-            if (transcripts.length > 0) {
-              // Sort by createdAt descending (newest first)
-              transcripts.sort((a, b) => b.createdAt - a.createdAt)
-              setArchivedTranscripts(transcripts)
-              console.log('[Archive] Loaded', transcripts.length, 'transcripts from CSV')
-            }
-          }
-          
-          // Load custom categories
-          const categories = await readCategoriesFromTauri()
-          if (categories.length > 0) {
-            setCustomCategories(categories)
-          }
+          console.log('[Archive] Loading from Tauri store...')
+          const data = await loadFromTauriStore()
+          transcripts = data.transcripts
+          categories = data.categories
         } else {
-          // Fallback to localStorage for development
           console.log('[Archive] Using localStorage fallback (dev mode)')
-          const { csv, categories } = loadFromLocalStorage()
-          
-          if (csv) {
-            const transcripts = csvToTranscripts(csv)
-            if (transcripts.length > 0) {
-              transcripts.sort((a, b) => b.createdAt - a.createdAt)
-              setArchivedTranscripts(transcripts)
-              console.log('[Archive] Loaded from localStorage:', transcripts.length, 'transcripts')
-            }
-          }
-          
-          if (categories.length > 0) {
-            setCustomCategories(categories)
-          }
+          const data = loadFromLocalStorage()
+          transcripts = data.transcripts
+          categories = data.categories
+        }
+        
+        if (transcripts.length > 0) {
+          // Sort by createdAt descending (newest first)
+          transcripts.sort((a, b) => b.createdAt - a.createdAt)
+          setArchivedTranscripts(transcripts)
+          console.log('[Archive] Loaded', transcripts.length, 'transcripts')
+        }
+        
+        if (categories.length > 0) {
+          setCustomCategories(categories)
         }
       } catch (error) {
         console.error('[Archive] Failed to load archive:', error)
@@ -193,108 +150,98 @@ export function useArchive() {
     }
   }, [isArchiveLoaded, setArchivedTranscripts, setIsArchiveLoaded, setCustomCategories])
 
+  // Persist function
+  const persist = useCallback(async (transcripts: ArchivedTranscript[], categories: string[]) => {
+    if (isTauri()) {
+      await saveToTauriStore(transcripts, categories)
+    } else {
+      saveToLocalStorage(transcripts, categories)
+    }
+  }, [])
+
   // Save an archived transcript
   const archiveTranscript = useCallback(async (input: ArchiveTranscriptInput) => {
     if (!input.text.trim()) return null
 
+    // Generate title with Claude (if API key available)
+    let title = input.title || 'Voice Memo'
+    if (anthropicApiKey) {
+      try {
+        const analysis = await analyzeTranscript(input.text.trim(), anthropicApiKey)
+        title = analysis.title
+        console.log('[Archive] Claude generated title:', title)
+      } catch (error) {
+        console.error('[Archive] Claude title generation failed:', error)
+      }
+    }
+
     const transcript: ArchivedTranscript = {
       id: crypto.randomUUID(),
-      title: input.title || 'Untitled Recording',
+      title,
       text: input.text.trim(),
       segments: input.segments,
       speakers: input.speakers,
       hasConsent: input.hasConsent,
-      category: input.category,
-      urgencyLevel: input.urgencyLevel,
-      noveltyLevel: input.noveltyLevel,
+      category: input.category || 'Note',
+      isImportant: false,
       createdAt: Date.now(),
     }
 
     try {
-      // Update in-memory store first
+      // Update in-memory store
       addArchivedTranscript(transcript)
       
-      // Get updated transcript list and persist as CSV
-      const updatedTranscripts = [transcript, ...archivedTranscripts]
-      const csv = transcriptsToCSV(updatedTranscripts)
+      // Persist with the new transcript prepended
+      const updatedTranscripts = [transcript, ...transcriptsRef.current]
+      await persist(updatedTranscripts, categoriesRef.current)
       
-      if (isTauri()) {
-        await writeCSVToTauri(csv)
-        console.log('[Archive] Saved to Tauri CSV:', updatedTranscripts.length, 'transcripts')
-      } else {
-        const { categories } = loadFromLocalStorage()
-        saveToLocalStorage(csv, categories)
-      }
       return transcript
     } catch (error) {
       console.error('[Archive] Failed to archive transcript:', error)
       throw error
     }
-  }, [addArchivedTranscript, archivedTranscripts])
+  }, [addArchivedTranscript, anthropicApiKey, persist])
 
   // Update an archived transcript
   const updateTranscript = useCallback(async (id: string, updates: Partial<ArchivedTranscript>) => {
     try {
       updateArchivedTranscript(id, updates)
       
-      const updatedTranscripts = archivedTranscripts.map(t => 
+      const updatedTranscripts = transcriptsRef.current.map(t => 
         t.id === id ? { ...t, ...updates } : t
       )
-      const csv = transcriptsToCSV(updatedTranscripts)
-      
-      if (isTauri()) {
-        await writeCSVToTauri(csv)
-        console.log('[Archive] Updated transcript in Tauri CSV')
-      } else {
-        const { categories } = loadFromLocalStorage()
-        saveToLocalStorage(csv, categories)
-      }
+      await persist(updatedTranscripts, categoriesRef.current)
     } catch (error) {
       console.error('[Archive] Failed to update transcript:', error)
       throw error
     }
-  }, [updateArchivedTranscript, archivedTranscripts])
+  }, [updateArchivedTranscript, persist])
 
   // Delete an archived transcript
   const deleteTranscript = useCallback(async (id: string) => {
     try {
       removeArchivedTranscript(id)
       
-      const updatedTranscripts = archivedTranscripts.filter(t => t.id !== id)
-      const csv = transcriptsToCSV(updatedTranscripts)
-      
-      if (isTauri()) {
-        await writeCSVToTauri(csv)
-        console.log('[Archive] Deleted transcript from Tauri CSV')
-      } else {
-        const { categories } = loadFromLocalStorage()
-        saveToLocalStorage(csv, categories)
-      }
+      const updatedTranscripts = transcriptsRef.current.filter(t => t.id !== id)
+      await persist(updatedTranscripts, categoriesRef.current)
     } catch (error) {
       console.error('[Archive] Failed to delete transcript:', error)
       throw error
     }
-  }, [removeArchivedTranscript, archivedTranscripts])
+  }, [removeArchivedTranscript, persist])
 
   // Add a custom category and persist it
   const addCustomCategory = useCallback(async (category: string) => {
     try {
       addCustomCategoryToStore(category)
       
-      const updatedCategories = [...customCategories, category]
-      
-      if (isTauri()) {
-        await writeCategoriesToTauri(updatedCategories)
-        console.log('[Archive] Added custom category to Tauri:', category)
-      } else {
-        const { csv } = loadFromLocalStorage()
-        saveToLocalStorage(csv, updatedCategories)
-      }
+      const updatedCategories = [...categoriesRef.current, category]
+      await persist(transcriptsRef.current, updatedCategories)
     } catch (error) {
       console.error('[Archive] Failed to add custom category:', error)
       throw error
     }
-  }, [addCustomCategoryToStore, customCategories])
+  }, [addCustomCategoryToStore, persist])
 
   // Export all transcripts as a downloadable CSV
   const exportToCSV = useCallback(async () => {

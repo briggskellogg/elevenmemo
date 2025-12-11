@@ -1,30 +1,33 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Toaster, toast } from 'sonner'
 import { WaveformDisplay } from './components/WaveformDisplay'
-import { BrandComputerAudioIcon, BrandSingleSpeakerIcon, BrandCopyIcon, BrandCheckIcon } from '@/components/ui/brand-icons'
+import { BrandCopyIcon, BrandCheckIcon, BrandPauseIcon, BrandPlayIcon } from '@/components/ui/brand-icons'
 import { RecordingBar, type ScribeLanguageCode } from './components/RecordingBar'
 import { TranscriptBox } from './components/TranscriptBox'
 import { ArchiveDialog } from './components/ArchiveDialog'
 import { ThemeToggle } from './components/ThemeToggle'
 import { useApiKey } from './hooks/useApiKey'
+import { useAnthropicApiKey } from './hooks/useAnthropicApiKey'
 import { useArchive } from './hooks/useArchive'
 import { useScribeTranscription } from './hooks/useScribeTranscription'
 import { useSettingsStore } from './store/settings'
-import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
+import { FolderArchive } from 'lucide-react'
 import llmemoLogoDark from './assets/llmemo-logo-dark.svg'
 import llmemoLogoLight from './assets/llmemo-logo-light.svg'
 import orbLogo from './assets/orb-logo.png'
 import './App.css'
 
+// Golden ratio based spacing (φ ≈ 1.618)
+// Base: 8px → 13px → 21px → 34px → 55px → 89px
+
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <kbd className={cn(
-      'inline-flex items-center justify-center px-1.5 py-0.5 rounded',
-      'bg-muted/80 border border-border/50 text-[10px] font-medium text-muted-foreground',
-      'min-w-[18px]',
+      'inline-flex items-center justify-center px-1.5 py-0.5 rounded-md',
+      'bg-background/60 border border-border/40 text-[10px] font-medium text-muted-foreground/80',
+      'min-w-[20px] backdrop-blur-sm',
       className
     )}>
       {children}
@@ -32,16 +35,9 @@ function Kbd({ children, className }: { children: React.ReactNode; className?: s
   )
 }
 
-// Generate a simple title from the first few words
-function generateTitle(text: string): string {
-  const words = text.trim().split(/\s+/).slice(0, 5)
-  if (words.length === 0) return 'Voice Memo'
-  const title = words.join(' ')
-  return title.length > 40 ? title.slice(0, 37) + '...' : title
-}
-
 function App() {
   const { apiKey, isLoaded } = useApiKey()
+  useAnthropicApiKey() // Initialize Anthropic API key from env/localStorage
   const { archiveTranscript } = useArchive()
   const { setArchiveDialogOpen, theme } = useSettingsStore()
   const [isStarting, setIsStarting] = useState(false)
@@ -53,11 +49,6 @@ function App() {
   
   // Track if current content has been archived (prevent double archiving)
   const [isArchived, setIsArchived] = useState(false)
-  
-  // Computer audio mode - enables both mic AND system audio
-  const [computerAudioEnabled, setComputerAudioEnabled] = useState(false)
-  
-  // Multiple speakers toggle for diarization (cannot be changed mid-recording)
   
   // Action feedback states
   const [copyTriggered, setCopyTriggered] = useState(false)
@@ -102,12 +93,6 @@ function App() {
     }
   }, [theme])
 
-  // Reset archived state when transcript changes
-  useEffect(() => {
-    if (transcript || partialTranscript) {
-      setIsArchived(false)
-    }
-  }, [transcript, partialTranscript])
 
   // Check if there's existing content before starting new recording
   const hasExistingContent = !!(transcript || partialTranscript)
@@ -125,16 +110,12 @@ function App() {
     
     // Start recording directly
     setIsStarting(true)
-    toast.info('Connecting to ElevenLabs...')
     try {
       console.log('Starting recording with API key:', apiKey ? 'present' : 'missing')
       await start()
       setRecordingStartTime(Date.now())
-      toast.success('Recording started')
     } catch (error) {
       console.error('Failed to start recording:', error)
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      toast.error(`Failed: ${message}`)
     } finally {
       setIsStarting(false)
     }
@@ -143,35 +124,39 @@ function App() {
 
   const handleStopRecording = useCallback(async () => {
     setIsProcessing(true)
-    stop()
+    stop() // This commits any partial transcript and disconnects
     setIsPaused(false)
     setRecordingStartTime(null)
     
-    // Get the full transcript text
-    const textToArchive = [transcript, partialTranscript].filter(Boolean).join(' ').trim()
+    // Brief delay to let the UI update with finalized text
+    await new Promise(resolve => setTimeout(resolve, 300))
     
-    if (textToArchive) {
+    // Get the full transcript text (segments + any remaining partial)
+    const fullText = [transcript, partialTranscript].filter(Boolean).join(' ').trim()
+    
+    if (fullText) {
       try {
+        // Archive with Claude analysis (generates title, category, flags)
         await archiveTranscript({
-          title: generateTitle(textToArchive),
-          text: textToArchive,
+          title: '', // Claude will generate
+          text: fullText,
           segments,
           speakers: [],
           hasConsent: true,
-          category: 'Note',
-          urgencyLevel: 0,
-          noveltyLevel: 0,
         })
-        
         setIsArchived(true)
-        toast.success('Archived!')
-      } catch (err) {
-        console.error('Failed to archive:', err)
-        toast.error('Archive failed')
+        
+        // Show fun archived confirmation
+        toast('Tucked away safely.', {
+          icon: <FolderArchive className="h-4 w-4 text-muted-foreground" />,
+          duration: 2500,
+        })
+      } catch (error) {
+        console.error('Failed to archive:', error)
+        toast.error('Failed to archive transcript')
       }
-    } else {
-      toast.success('Recording ended')
     }
+    
     setIsProcessing(false)
   }, [stop, transcript, partialTranscript, segments, archiveTranscript])
 
@@ -180,22 +165,16 @@ function App() {
     stop()
     setIsPaused(false)
     setRecordingStartTime(null)
-    toast.warning('Time limit reached - recording stopped automatically', {
-      description: 'Maximum recording time is 1 hour per session.',
-      duration: 5000,
-    })
   }, [stop])
 
   const handlePauseRecording = useCallback(() => {
     pause()
     setIsPaused(true)
-    toast.success('Recording paused')
   }, [pause])
 
   const handleResumeRecording = useCallback(async () => {
     await resume()
     setIsPaused(false)
-    toast.success('Recording resumed')
   }, [resume])
 
   const handleDiscard = useCallback(() => {
@@ -204,47 +183,12 @@ function App() {
     setRecordingStartTime(null)
     clearTranscript()
     setIsArchived(false)
-    toast.success('Recording discarded')
   }, [stop, clearTranscript])
-
-  const handleArchive = useCallback(async () => {
-    const textToArchive = [transcript, partialTranscript].filter(Boolean).join(' ').trim()
-    if (!textToArchive) {
-      toast.error('Nothing to archive')
-      return
-    }
-    
-    if (isArchived) {
-      toast.error('Already archived')
-      return
-    }
-    
-    try {
-      const title = generateTitle(textToArchive)
-      await archiveTranscript({
-        title,
-        text: textToArchive,
-        segments,
-        speakers: [],
-        hasConsent: true,
-        category: 'Note',
-        urgencyLevel: 0,
-        noveltyLevel: 0,
-      })
-      setIsArchived(true)
-      clearTranscript()
-      toast.success(`Archived: ${title}`)
-    } catch (err) {
-      console.error('Failed to archive:', err)
-      toast.error('Failed to archive')
-    }
-  }, [transcript, partialTranscript, segments, isArchived, archiveTranscript, clearTranscript])
 
   const handleClear = useCallback(() => {
     if (!transcript && !partialTranscript) return
     clearTranscript()
     setIsArchived(false)
-    toast.success('Cleared')
   }, [transcript, partialTranscript, clearTranscript])
 
   const handleCopy = useCallback(async () => {
@@ -255,10 +199,8 @@ function App() {
       await navigator.clipboard.writeText(textToCopy)
       setCopyTriggered(true)
       setTimeout(() => setCopyTriggered(false), 1500)
-      toast.success('Copied to clipboard')
     } catch (error) {
       console.error('Failed to copy:', error)
-      toast.error('Failed to copy')
     }
   }, [transcript, partialTranscript])
 
@@ -303,7 +245,8 @@ function App() {
           break
         case 'e':
           e.preventDefault()
-          if (isConnected) {
+          // Allow ending recording when connected OR when paused
+          if (isConnected || isPaused) {
             handleStopRecording()
           }
           break
@@ -315,11 +258,7 @@ function App() {
           e.preventDefault()
           handleClear()
           break
-        case 'a':
-          e.preventDefault()
-          handleArchive()
-          break
-        case 'h':
+        case 'v':
           e.preventDefault()
           setArchiveDialogOpen(true)
           break
@@ -343,7 +282,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isConnected, isRecording, isPaused, handleStartRecording, handleStopRecording, handlePauseRecording, handleResumeRecording, handleCopy, handleClear, handleArchive, handleDiscard, handleToggleTheme, setArchiveDialogOpen])
+  }, [isConnected, isRecording, isPaused, handleStartRecording, handleStopRecording, handlePauseRecording, handleResumeRecording, handleCopy, handleClear, handleDiscard, handleToggleTheme, setArchiveDialogOpen])
 
   // Determine which logos to use based on theme
   const isDark = theme === 'dark' || 
@@ -352,35 +291,25 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
-      {/* Toast notifications */}
-      <Toaster 
-        position="bottom-left"
-        toastOptions={{
-          duration: 2000,
-          className: 'text-sm bg-background border border-border shadow-lg',
-        }}
-        closeButton
-      />
-
-      {/* Header with logo and controls */}
-      <div 
-        className="relative flex items-center justify-center h-14"
+      {/* Header - φ⁴ height (55px) */}
+      <header 
+        className="relative flex items-center justify-center h-[55px] shrink-0"
         data-tauri-drag-region
       >
         <img 
           src={headerLogo} 
           alt="llMemo" 
-          className="h-6 w-auto drop-shadow-sm"
+          className="h-[21px] w-auto opacity-90"
         />
-        <div className="absolute right-3 flex items-center gap-1">
+        <div className="absolute right-[21px] flex items-center gap-2">
           <ArchiveDialog />
           <ThemeToggle />
         </div>
-      </div>
+      </header>
 
-      {/* Main Content */}
-      <main className="flex flex-col flex-1 p-4 gap-4 overflow-hidden">
-        {/* Recording Bar - above waveform */}
+      {/* Main Content - φ² padding (21px) */}
+      <main className="flex flex-col flex-1 px-[21px] pb-[13px] gap-[13px] overflow-hidden">
+        {/* Recording Bar */}
         <RecordingBar
           isRecording={isRecording}
           isLoading={isStarting || status === 'connecting'}
@@ -395,7 +324,7 @@ function App() {
           onLanguageChange={setSelectedLanguage}
         />
 
-        {/* Waveform */}
+        {/* Waveform - fixed height */}
         <WaveformDisplay
           isRecording={isRecording}
           isPaused={isPaused}
@@ -403,82 +332,51 @@ function App() {
           deviceId={selectedDeviceId}
         />
 
-        {/* Action Bar */}
-        {(
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-4">
-              {/* Computer Audio Toggle - fixed width containers to prevent layout shift */}
-              <TooltipProvider>
-                <div className="flex items-center gap-2">
-                  {/* Left icon - fixed 16px */}
-                  <div className="w-4 h-4 flex items-center justify-center">
-                    <BrandSingleSpeakerIcon 
-                      size={16} 
-                      className={isRecording ? 'text-muted-foreground/50' : 'text-muted-foreground'} 
-                    />
-                  </div>
-                  <Switch
-                    id="computer-audio-toggle"
-                    checked={computerAudioEnabled}
-                    onCheckedChange={setComputerAudioEnabled}
-                    disabled={isRecording}
-                    className="data-[state=checked]:bg-[#2DD28D] h-5 w-9 disabled:opacity-50"
-                  />
-                  {/* Right icon area - tooltip wraps only the computer icon */}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="w-[52px] h-4 flex items-center justify-start cursor-help">
-                        {computerAudioEnabled ? (
-                          <div className={`flex items-center gap-0.5 ${
-                            isRecording ? 'text-muted-foreground/50' : 'text-[#2DD28D]'
-                          }`}>
-                            <BrandComputerAudioIcon size={16} />
-                            <span className="text-[10px]">+</span>
-                            <BrandSingleSpeakerIcon size={16} />
-                          </div>
-                        ) : (
-                          <BrandComputerAudioIcon 
-                            size={16} 
-                            className={isRecording ? 'text-muted-foreground/50' : 'text-muted-foreground'} 
-                          />
-                        )}
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[240px] text-center">
-                      <p className="text-xs">
-                        {computerAudioEnabled 
-                          ? "Now select a virtual audio device (e.g., BlackHole, Loopback) from the microphone dropdown above to capture computer audio"
-                          : "Capture computer audio by enabling this, then selecting a virtual audio device from the mic dropdown"
-                        }
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              </TooltipProvider>
-
-            </div>
-            
-            {/* Copy button - on the right */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCopy}
-              disabled={!hasContent}
-              className={cn(
-                'h-8 px-2 gap-1 transition-all',
-                copyTriggered && 'bg-[#2DD28D]/20'
-              )}
-              aria-label="Copy transcript"
-            >
-              {copyTriggered ? (
-                <BrandCheckIcon size={16} />
-              ) : (
-                <BrandCopyIcon size={16} />
-              )}
-              <Kbd>C</Kbd>
-            </Button>
+        {/* Action Bar - minimal height */}
+        <div className="flex items-center justify-between h-[34px]">
+          {/* Left side - Pause/Resume button (only when recording) */}
+          <div className="flex items-center gap-2">
+            {isRecording && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={isPaused ? handleResumeRecording : handlePauseRecording}
+                className={cn(
+                  'h-[34px] px-3 gap-2 rounded-lg transition-all',
+                  isPaused && 'bg-[#F58633]/15 hover:bg-[#F58633]/25'
+                )}
+                aria-label={isPaused ? "Resume recording" : "Pause recording"}
+              >
+                {isPaused ? (
+                  <BrandPlayIcon size={18} />
+                ) : (
+                  <BrandPauseIcon size={18} />
+                )}
+                <Kbd>P</Kbd>
+              </Button>
+            )}
           </div>
-        )}
+          
+          {/* Right side - Copy button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleCopy}
+            disabled={!hasContent}
+            className={cn(
+              'h-[34px] px-3 gap-2 rounded-lg transition-all',
+              copyTriggered && 'bg-[#2DD28D]/15'
+            )}
+            aria-label="Copy transcript"
+          >
+            {copyTriggered ? (
+              <BrandCheckIcon size={18} />
+            ) : (
+              <BrandCopyIcon size={18} />
+            )}
+            <Kbd>C</Kbd>
+          </Button>
+        </div>
 
         {/* Transcript */}
         <TranscriptBox
@@ -488,32 +386,21 @@ function App() {
           isRecording={isRecording}
           isPaused={isPaused}
           isProcessing={isProcessing}
+          isArchived={isArchived}
           recordingStartTime={recordingStartTime}
           onMaxTimeReached={handleMaxTimeReached}
-          onPause={handlePauseRecording}
-          onResume={handleResumeRecording}
         />
       </main>
 
-      {/* Footer */}
-      <footer className="relative flex flex-col items-center justify-center px-4 py-4 border-t border-border/30">
-        <div className="text-center leading-snug">
-          <p className="text-[10px] text-muted-foreground/70">"An agent can carry out tasks, but the final responsibility should always remain with a human."</p>
-          <p className="text-[9px] text-muted-foreground/50 mt-0.5">Policy based on{' '}
-            <a
-              href="https://linear.app/developers/aig"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-muted-foreground/70 transition-colors"
-            >
-              Linear's framework
-            </a>.
-          </p>
-        </div>
+      {/* Footer - minimal, elegant */}
+      <footer className="relative flex items-center justify-center h-[55px] px-[21px] border-t border-border/20">
+        <p className="text-[10px] text-muted-foreground/50 tracking-wide">
+          All processing happens locally on your device
+        </p>
         <img 
           src={orbLogo} 
           alt="" 
-          className="absolute right-3 bottom-2 h-6 w-6 rounded-full drop-shadow-lg hover:scale-110 transition-transform"
+          className="absolute right-[21px] h-[21px] w-[21px] rounded-full opacity-60 hover:opacity-100 hover:scale-110 transition-all duration-300"
         />
       </footer>
     </div>

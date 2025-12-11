@@ -4,14 +4,13 @@
 
 import type { ArchivedTranscript } from '@/store/settings'
 
-// CSV column headers
+// CSV column headers (v4 - simplified)
 const CSV_HEADERS = [
   'id',
   'title',
   'text',
   'category',
-  'urgencyLevel',
-  'noveltyLevel',
+  'isImportant',
   'hasConsent',
   'createdAt',
   'segments',
@@ -88,8 +87,7 @@ function transcriptToCSVRow(transcript: ArchivedTranscript): string {
     transcript.title,
     transcript.text,
     transcript.category || 'Note',
-    transcript.urgencyLevel ?? 0,
-    transcript.noveltyLevel ?? 0,
+    transcript.isImportant ?? false,
     transcript.hasConsent,
     transcript.createdAt,
     JSON.stringify(transcript.segments || []),
@@ -101,27 +99,47 @@ function transcriptToCSVRow(transcript: ArchivedTranscript): string {
 
 /**
  * Parse a CSV row back to an archived transcript
+ * Handles multiple format versions for backwards compatibility
  */
 function csvRowToTranscript(row: string): ArchivedTranscript | null {
   try {
     const values = parseCSVLine(row)
     
-    if (values.length < 8) {
+    if (values.length < 7) {
       console.warn('[CSV] Invalid row, not enough columns:', values.length)
       return null
     }
     
+    // v4 format (9 columns): id,title,text,category,isImportant,hasConsent,createdAt,segments,speakers
+    if (values.length === 9) {
+      return {
+        id: values[0] || crypto.randomUUID(),
+        title: values[1] || 'Untitled',
+        text: values[2] || '',
+        category: values[3] || 'Note',
+        isImportant: values[4] === 'true',
+        hasConsent: values[5] === 'true',
+        createdAt: parseInt(values[6] ?? '0') || Date.now(),
+        segments: values[7] ? JSON.parse(values[7]) : [],
+        speakers: values[8] ? JSON.parse(values[8]) : [],
+      }
+    }
+    
+    // Legacy formats (10-13 columns): migrate to new format
+    // Old format had: id,title,text,category,urgencyLevel,noveltyLevel,...
+    // We extract what we need and ignore old AI fields
+    const segmentsStr = values[values.length - 2] || '[]'
+    const speakersStr = values[values.length - 1] || '[]'
     return {
       id: values[0] || crypto.randomUUID(),
       title: values[1] || 'Untitled',
       text: values[2] || '',
       category: values[3] || 'Note',
-      urgencyLevel: parseInt(values[4] ?? '0') || 0,
-      noveltyLevel: parseInt(values[5] ?? '0') || 0,
-      hasConsent: values[6] === 'true',
-      createdAt: parseInt(values[7] ?? '0') || Date.now(),
-      segments: values[8] ? JSON.parse(values[8]) : [],
-      speakers: values[9] ? JSON.parse(values[9]) : [],
+      isImportant: false, // New field, default false for migrated data
+      hasConsent: true, // Assume consent for migrated data
+      createdAt: parseInt(values[values.length - 3] ?? '0') || Date.now(),
+      segments: JSON.parse(segmentsStr),
+      speakers: JSON.parse(speakersStr),
     }
   } catch (e) {
     console.error('[CSV] Failed to parse row:', e)
@@ -166,7 +184,7 @@ export function csvToTranscripts(csv: string): ArchivedTranscript[] {
  * Generate a user-friendly CSV export (simplified columns for reading)
  */
 export function transcriptsToExportCSV(transcripts: ArchivedTranscript[]): string {
-  const header = ['Date', 'Title', 'Tag', 'Content'].join(',')
+  const header = ['Date', 'Title', 'Tag', 'Important', 'Content'].join(',')
   
   const rows = transcripts.map(t => {
     const date = new Date(t.createdAt).toLocaleString()
@@ -174,6 +192,7 @@ export function transcriptsToExportCSV(transcripts: ArchivedTranscript[]): strin
       escapeCSV(date),
       escapeCSV(t.title),
       escapeCSV(t.category || 'Note'),
+      escapeCSV(t.isImportant ? 'Yes' : 'No'),
       escapeCSV(t.text),
     ].join(',')
   })
@@ -232,4 +251,3 @@ function downloadCSVBrowser(csv: string, filename: string): void {
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
 }
-

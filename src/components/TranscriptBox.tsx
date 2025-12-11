@@ -1,27 +1,13 @@
 import { useRef, useEffect, useState, useMemo } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Clock } from 'lucide-react'
 import type { TranscriptSegment } from '@/hooks/useScribeTranscription'
-import { BrandMicIcon, ProcessingIcon, BrandPauseIcon, BrandPlayIcon } from '@/components/ui/brand-icons'
+import { BrandMicIcon } from '@/components/ui/brand-icons'
 import { getSpeakerName, getSpeakerColor } from '@/lib/speakerNames'
 
 // Maximum recording time in milliseconds (1 hour)
 const MAX_RECORDING_TIME_MS = 60 * 60 * 1000
-
-function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <kbd className={cn(
-      'inline-flex items-center justify-center px-1.5 py-0.5 rounded',
-      'bg-muted/80 border border-border/50 text-[10px] font-medium text-muted-foreground',
-      'min-w-[18px]',
-      className
-    )}>
-      {children}
-    </kbd>
-  )
-}
 
 interface TranscriptBoxProps {
   transcript: string
@@ -29,11 +15,10 @@ interface TranscriptBoxProps {
   partialTranscript?: string
   isRecording?: boolean
   isPaused?: boolean
-  isProcessing?: boolean  // True when analyzing/archiving after recording ends
+  isProcessing?: boolean
+  isArchived?: boolean
   recordingStartTime?: number | null
   onMaxTimeReached?: () => void
-  onPause?: () => void
-  onResume?: () => void
   className?: string
 }
 
@@ -56,10 +41,9 @@ export function TranscriptBox({
   isRecording = false,
   isPaused = false,
   isProcessing = false,
+  isArchived = false,
   recordingStartTime = null,
   onMaxTimeReached,
-  onPause,
-  onResume,
   className,
 }: TranscriptBoxProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -216,109 +200,114 @@ export function TranscriptBox({
   return (
     <div
       className={cn(
-        'relative flex-1 rounded-xl bg-muted/30 border border-border/50 overflow-hidden flex flex-col min-h-0',
+        'relative flex-1 rounded-2xl bg-muted/20 border border-border/30 overflow-hidden flex flex-col min-h-0',
+        'transition-all duration-300',
         className
       )}
     >
-      {/* Top right buttons - Pause (when recording) and Processing indicator */}
-      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-        {/* Pause/Resume button - only show when recording */}
-        {isRecording && (onPause || onResume) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={isPaused ? onResume : onPause}
-            className={cn(
-              'h-8 px-2 gap-1 transition-all bg-background/80 backdrop-blur-sm border border-border/50 hover:bg-background',
-              isPaused && 'bg-[#F58633]/20 border-[#F58633]/50'
-            )}
-            aria-label={isPaused ? "Resume recording" : "Pause recording"}
-          >
-            {isPaused ? (
-              <BrandPlayIcon size={16} />
-            ) : (
-              <BrandPauseIcon size={16} />
-            )}
-            <Kbd>P</Kbd>
-          </Button>
-        )}
-
-        {/* Processing indicator */}
-        {isProcessing && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#2DD28D]/10 border border-[#2DD28D]/30">
-            <div className="h-3 w-3 animate-spin rounded-full border-2 border-[#2DD28D] border-t-transparent" />
-            <span className="text-xs text-[#2DD28D] font-medium">Archiving...</span>
-          </div>
-        )}
-      </div>
+      {/* Status indicator - bottom right */}
+      {(isProcessing || isArchived) && (
+        <div className="absolute bottom-[13px] right-[13px] z-10">
+          {isProcessing ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#2DD28D]/10 border border-[#2DD28D]/20 backdrop-blur-sm">
+              <div className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-[#2DD28D] border-t-transparent" />
+              <span className="text-[11px] text-[#2DD28D] font-medium tracking-wide">Processing</span>
+            </div>
+          ) : isArchived ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#2DD28D]/10 border border-[#2DD28D]/20 backdrop-blur-sm">
+              <svg className="h-2.5 w-2.5 text-[#2DD28D]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12L10 17L19 8" />
+              </svg>
+              <span className="text-[11px] text-[#2DD28D] font-medium tracking-wide">Saved</span>
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* Transcript content */}
       <ScrollArea ref={scrollRef} className="flex-1 min-h-0">
-        <div className="p-4 pt-14 pb-10">
+        <div className="p-[21px] pb-[55px]">
           {hasContent ? (
-            <div className="text-sm leading-relaxed">
+            <div className="text-[15px] leading-[1.7] tracking-[-0.01em]">
               {/* Multi-speaker view - show speaker labels */}
               {hasSpeakers ? (
-                <div className="space-y-3">
+                <div className="space-y-[13px]">
                   {segments.map((segment, index) => {
                     const speakerName = segment.speakerId ? getSpeakerName(segment.speakerId) : null
                     const speakerColor = segment.speakerId ? getSpeakerColor(segment.speakerId) : null
+                    const isLast = index === segments.length - 1
                     
                     return (
-                      <div key={index} className="flex gap-2">
+                      <div key={index} className="flex gap-3">
                         {speakerName && (
                           <span 
-                            className="text-xs font-medium shrink-0 mt-0.5"
+                            className="text-xs font-medium shrink-0 mt-1 opacity-80"
                             style={{ color: speakerColor || undefined }}
                           >
-                            {speakerName}:
+                            {speakerName}
                           </span>
                         )}
-                        <p className="whitespace-pre-wrap flex-1">
+                        <p className="whitespace-pre-wrap flex-1 text-foreground/90">
                           {segment.text}
+                          {/* Inline partial transcript after last segment */}
+                          {isLast && partialTranscript && (
+                            <span className="text-muted-foreground/60">
+                              {' '}{partialTranscript}
+                              {isRecording && (
+                                <span className="inline-block w-[2px] h-[18px] bg-primary/80 ml-1 animate-pulse align-text-bottom rounded-full" />
+                              )}
+                            </span>
+                          )}
                         </p>
                       </div>
                     )
                   })}
+                  {/* Show partial alone if no segments yet */}
+                  {segments.length === 0 && partialTranscript && (
+                    <p className="whitespace-pre-wrap text-muted-foreground/60">
+                      {partialTranscript}
+                      {isRecording && (
+                        <span className="inline-block w-[2px] h-[18px] bg-primary/80 ml-1 animate-pulse align-text-bottom rounded-full" />
+                      )}
+                    </p>
+                  )}
                 </div>
               ) : (
-                /* Single speaker view - format into paragraphs */
-                groupedParagraphs.length > 0 && (
-                  <div className="space-y-4">
-                    {groupedParagraphs.map((paragraph, index) => (
-                      <p key={index} className="whitespace-pre-wrap">
+                /* Single speaker view - format into paragraphs with inline partial */
+                <div className="space-y-[21px]">
+                  {groupedParagraphs.map((paragraph, index) => {
+                    const isLast = index === groupedParagraphs.length - 1
+                    return (
+                      <p key={index} className="whitespace-pre-wrap text-foreground/90">
                         {paragraph}
+                        {/* Inline partial transcript after last paragraph */}
+                        {isLast && partialTranscript && (
+                          <span className="text-muted-foreground/60">
+                            {' '}{partialTranscript}
+                            {isRecording && (
+                              <span className="inline-block w-[2px] h-[18px] bg-primary/80 ml-1 animate-pulse align-text-bottom rounded-full" />
+                            )}
+                          </span>
+                        )}
                       </p>
-                    ))}
-                  </div>
-                )
-              )}
-              
-              {/* Active chunk - being processed */}
-              {partialTranscript && (
-                <>
-                  {/* Visual divider between processed and active chunk */}
-                  {(groupedParagraphs.length > 0 || segments.length > 0) && (
-                    <div className="flex items-center gap-2 my-4">
-                      <div className="flex-1 h-px bg-border/50" />
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-muted/50 border border-border/30">
-                        <ProcessingIcon className="animate-spin text-muted-foreground/70" />
-                      </div>
-                      <div className="flex-1 h-px bg-border/50" />
-                    </div>
-                  )}
-                  <div className="rounded-lg bg-muted/20 border border-border/30 p-3">
-                    <p className="text-muted-foreground/70 italic">
+                    )
+                  })}
+                  {/* Show partial alone if no paragraphs yet */}
+                  {groupedParagraphs.length === 0 && partialTranscript && (
+                    <p className="whitespace-pre-wrap text-muted-foreground/60">
                       {partialTranscript}
+                      {isRecording && (
+                        <span className="inline-block w-[2px] h-[18px] bg-primary/80 ml-1 animate-pulse align-text-bottom rounded-full" />
+                      )}
                     </p>
-                  </div>
-                </>
+                  )}
+                </div>
               )}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full min-h-[120px] py-8 gap-3">
-              <BrandMicIcon size={36} className="text-muted-foreground/30" />
-              <p className="text-xs text-muted-foreground/40">Press R to record</p>
+            <div className="flex flex-col items-center justify-center h-full min-h-[144px] py-[34px] gap-[13px]">
+              <BrandMicIcon size={34} className="text-muted-foreground/20" />
+              <p className="text-[13px] text-muted-foreground/30 tracking-wide">Press R to start recording</p>
             </div>
           )}
         </div>
@@ -326,11 +315,11 @@ export function TranscriptBox({
 
       {/* Timer - only show when recording */}
       {isRecording && recordingStartTime && (
-        <div className="absolute bottom-2 right-3 flex items-center gap-1.5 px-2 py-1 rounded-md bg-background/80 backdrop-blur-sm border border-border/50">
-          <Clock className={cn('h-3 w-3', isLowTime ? 'text-[#F58633]' : 'text-muted-foreground')} />
+        <div className="absolute bottom-[13px] right-[13px] flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background/80 backdrop-blur-sm border border-border/30">
+          <Clock className={cn('h-3.5 w-3.5', isLowTime ? 'text-[#F58633]' : 'text-muted-foreground/60')} />
           <span className={cn(
-            'text-xs font-mono tabular-nums',
-            isLowTime ? 'text-[#F58633]' : 'text-muted-foreground'
+            'text-[11px] font-mono tabular-nums tracking-wide',
+            isLowTime ? 'text-[#F58633]' : 'text-muted-foreground/60'
           )}>
             {formatTime(remainingTime)}
           </span>

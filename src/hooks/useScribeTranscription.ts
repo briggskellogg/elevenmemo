@@ -11,7 +11,6 @@ export interface UseScribeTranscriptionOptions {
   apiKey: string
   deviceId?: string
   languageCode?: string
-  numSpeakers?: number // Enable diarization when > 1
   onError?: (error: Error) => void
 }
 
@@ -36,7 +35,6 @@ export function useScribeTranscription({
   apiKey,
   deviceId,
   languageCode = 'en',
-  numSpeakers,
   onError,
 }: UseScribeTranscriptionOptions): UseScribeTranscriptionReturn {
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
@@ -46,15 +44,10 @@ export function useScribeTranscription({
   // Track processed texts to prevent duplicates from multiple callbacks
   const [processedTexts] = useState(() => new Set<string>())
 
-  // Log diarization config for debugging
-  console.log('[Scribe] Diarization config:', { numSpeakers, enabled: numSpeakers && numSpeakers > 1 })
-
   const scribe = useScribe({
     modelId: 'scribe_v2_realtime',
     languageCode,
     includeTimestamps: true,
-    // Enable diarization when numSpeakers is set
-    ...(numSpeakers && numSpeakers > 1 ? { numSpeakers } : {}),
     // Tuned VAD settings for better noise rejection
     vadThreshold: 0.6, // Higher threshold = less sensitive to quiet sounds
     minSpeechDurationMs: 250, // Require longer speech to trigger
@@ -159,8 +152,18 @@ export function useScribeTranscription({
   }, [apiKey, scribe, onError])
 
   const stop = useCallback(() => {
+    // Commit any partial transcript as a final segment before stopping
+    const partial = scribe.partialTranscript?.trim()
+    if (partial) {
+      const segmentKey = `${partial}-stop-${Date.now()}`
+      if (!processedTexts.has(segmentKey)) {
+        processedTexts.add(segmentKey)
+        setSegments(prev => [...prev, { text: partial, speakerId: null }])
+      }
+      scribe.clearTranscripts()
+    }
     scribe.disconnect()
-  }, [scribe])
+  }, [scribe, processedTexts])
 
   // Pause by disconnecting (stops API calls, preserves transcript)
   // Force completion of any partial transcript before pausing
@@ -168,10 +171,15 @@ export function useScribeTranscription({
     // Commit any partial transcript as a segment before pausing
     const partial = scribe.partialTranscript?.trim()
     if (partial) {
+      // Add ellipsis if the partial doesn't end with punctuation
+      // This indicates the thought was interrupted and helps formatting
+      const needsEllipsis = !/[.!?]$/.test(partial)
+      const textToCommit = needsEllipsis ? `${partial}...` : partial
+      
       const segmentKey = `${partial}-pause-${Date.now()}`
       if (!processedTexts.has(segmentKey)) {
         processedTexts.add(segmentKey)
-        setSegments(prev => [...prev, { text: partial, speakerId: null }])
+        setSegments(prev => [...prev, { text: textToCommit, speakerId: null }])
       }
       // Clear the partial transcript in scribe
       scribe.clearTranscripts()

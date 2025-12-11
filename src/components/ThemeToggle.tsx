@@ -7,9 +7,9 @@ import { BrandSunIcon, BrandMoonIcon } from '@/components/ui/brand-icons'
 function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <kbd className={cn(
-      'inline-flex items-center justify-center px-1.5 py-0.5 rounded',
-      'bg-muted/80 border border-border/50 text-[10px] font-medium text-muted-foreground',
-      'min-w-[18px]',
+      'inline-flex items-center justify-center px-1.5 py-0.5 rounded-md',
+      'bg-background/60 border border-border/40 text-[10px] font-medium text-muted-foreground/80',
+      'min-w-[20px] backdrop-blur-sm',
       className
     )}>
       {children}

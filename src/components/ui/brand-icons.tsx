@@ -177,20 +177,24 @@ export function BrandCheckIcon({ size = 24, className }: BrandIconProps) {
   )
 }
 
-// History/Clock icon - for archive history
+// Brain/AI icon - for vault access
 export function BrandHistoryIcon({ size = 24, className }: BrandIconProps) {
   return (
     <svg 
       width={size} 
       height={size} 
-      viewBox="0 0 48 48" 
+      viewBox="0 0 60 60" 
       fill="none" 
       xmlns="http://www.w3.org/2000/svg"
       className={cn('shrink-0', className)}
     >
-      <circle cx="26" cy="26" r="15" stroke="currentColor" strokeWidth="3" />
-      <path d="M26 17V26L31 31" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M11 14L14 11M14 11V17M14 11H8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Brain outline */}
+      <path d="M12.5 13.75L22.5 7.5L30 10L37.5 7.5L47.5 13.75V20L52.5 23.75V33.75L47.5 37.5V46.25L37.5 52.5L30 50L22.5 52.5L12.5 46.25V37.5L7.5 33.75V23.75L12.5 20V13.75Z" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+      {/* Neural connections */}
+      <path d="M30 11.25V20L37.5 27.5M30 48.75V40L22.5 32.5" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+      {/* Nodes */}
+      <circle cx="22.5" cy="32.5" r="2.5" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx="37.5" cy="27.5" r="2.5" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 }
@@ -228,7 +232,7 @@ export function BrandCloseIcon({ size = 24, className }: BrandIconProps) {
   )
 }
 
-// Languages/Globe icon
+// Languages/Translate icon (文A style)
 export function BrandLanguagesIcon({ size = 24, className }: BrandIconProps) {
   return (
     <svg 
@@ -239,9 +243,22 @@ export function BrandLanguagesIcon({ size = 24, className }: BrandIconProps) {
       xmlns="http://www.w3.org/2000/svg"
       className={cn('shrink-0', className)}
     >
-      <circle cx="24" cy="24" r="15" stroke="currentColor" strokeWidth="3" />
-      <path d="M9 24H39" stroke="currentColor" strokeWidth="3" />
-      <ellipse cx="24" cy="24" rx="6" ry="15" stroke="currentColor" strokeWidth="3" />
+      {/* Chinese character 文 */}
+      <path 
+        d="M6 10H22M14 10V12M10 18C10 18 12 24 14 26C16 28 20 32 20 32M18 18C18 18 16 24 14 26C12 28 8 32 8 32" 
+        stroke="currentColor" 
+        strokeWidth="2.5" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+      {/* Letter A */}
+      <path 
+        d="M32 38L38 22L44 38M34 34H42" 
+        stroke="currentColor" 
+        strokeWidth="2.5" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
     </svg>
   )
 }
@@ -338,30 +355,21 @@ export function BrandSettingsIcon({ size = 24, className }: BrandIconProps) {
   )
 }
 
-// Recording icon - for Start Recording button (microphone with waves)
+// Recording icon - for Start Recording button (circle with play)
 export function BrandRecordIcon({ size = 24, className }: BrandIconProps) {
   return (
     <svg 
       width={size} 
       height={size} 
-      viewBox="0 0 48 48" 
+      viewBox="0 0 60 60" 
       fill="none" 
       xmlns="http://www.w3.org/2000/svg"
       className={cn('shrink-0', className)}
     >
-      <circle cx="24" cy="24" r="8" fill="currentColor" />
-      <path 
-        d="M34 16C36 18.5 37 21 37 24C37 27 36 29.5 34 32" 
-        stroke="currentColor" 
-        strokeWidth="3" 
-        strokeLinecap="round"
-      />
-      <path 
-        d="M14 32C12 29.5 11 27 11 24C11 21 12 18.5 14 16" 
-        stroke="currentColor" 
-        strokeWidth="3" 
-        strokeLinecap="round"
-      />
+      {/* Play triangle */}
+      <path d="M25 37.0098V22.9902C25 21.9859 26.1244 21.3916 26.9542 21.9574L37.2353 28.9672C37.963 29.4634 37.963 30.5366 37.2353 31.0328L26.9542 38.0426C26.1244 38.6084 25 38.0141 25 37.0098Z" fill="currentColor"/>
+      {/* Circle outline */}
+      <path fillRule="evenodd" clipRule="evenodd" d="M30 10C18.9543 10 10 18.9543 10 30C10 41.0457 18.9543 50 30 50C41.0457 50 50 41.0457 50 30C50 18.9543 41.0457 10 30 10ZM5 30C5 16.1929 16.1929 5 30 5C43.8071 5 55 16.1929 55 30C55 43.8071 43.8071 55 30 55C16.1929 55 5 43.8071 5 30Z" fill="currentColor"/>
     </svg>
   )
 }
@@ -601,6 +609,254 @@ export function BrandElevenLabsIcon({ size = 24, className }: BrandIconProps) {
       <rect x="22" y="8" width="4" height="32" rx="2" fill="currentColor" />
       <rect x="29" y="12" width="4" height="24" rx="2" fill="currentColor" />
       <rect x="36" y="18" width="4" height="12" rx="2" fill="currentColor" />
+    </svg>
+  )
+}
+
+// Category icons - for note categories
+
+// Note icon - document/paper
+export function CategoryNoteIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 48 48" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('shrink-0', className)}
+    >
+      <path 
+        d="M14 8H28L36 16V40C36 41.1 35.1 42 34 42H14C12.9 42 12 41.1 12 40V10C12 8.9 12.9 8 14 8Z" 
+        stroke="currentColor" 
+        strokeWidth="3" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+      <path d="M28 8V16H36" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M18 24H30" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      <path d="M18 30H30" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// Message icon - envelope
+export function CategoryMessageIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 48 48" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('shrink-0', className)}
+    >
+      <rect x="6" y="12" width="36" height="26" rx="3" stroke="currentColor" strokeWidth="3" />
+      <path d="M6 15L24 28L42 15" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// Rant icon - fire/flame
+export function CategoryRantIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 48 48" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('shrink-0', className)}
+    >
+      <path 
+        d="M24 6C24 6 12 18 12 28C12 34.6 17.4 40 24 40C30.6 40 36 34.6 36 28C36 18 24 6 24 6Z" 
+        stroke="currentColor" 
+        strokeWidth="3" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+      <path 
+        d="M24 28C24 28 20 32 20 34C20 36.2 21.8 38 24 38C26.2 38 28 36.2 28 34C28 32 24 28 24 28Z" 
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+// Idea icon - lightbulb
+export function CategoryIdeaIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 48 48" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('shrink-0', className)}
+    >
+      <path 
+        d="M18 38H30M20 42H28M24 6C17.4 6 12 11.4 12 18C12 22.4 14.4 26.2 18 28.4V32C18 33.1 18.9 34 20 34H28C29.1 34 30 33.1 30 32V28.4C33.6 26.2 36 22.4 36 18C36 11.4 30.6 6 24 6Z" 
+        stroke="currentColor" 
+        strokeWidth="3" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+// Meeting icon - calendar with people
+export function CategoryMeetingIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 48 48" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('shrink-0', className)}
+    >
+      <rect x="8" y="10" width="32" height="30" rx="3" stroke="currentColor" strokeWidth="3" />
+      <path d="M16 6V14" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      <path d="M32 6V14" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      <path d="M8 20H40" stroke="currentColor" strokeWidth="3" />
+      <circle cx="18" cy="30" r="3" stroke="currentColor" strokeWidth="2" />
+      <circle cx="30" cy="30" r="3" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  )
+}
+
+// Conversation icon - chat bubbles
+export function CategoryConversationIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 48 48" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('shrink-0', className)}
+    >
+      <path 
+        d="M8 10H32C34.2 10 36 11.8 36 14V26C36 28.2 34.2 30 32 30H18L10 38V30H8C5.8 30 4 28.2 4 26V14C4 11.8 5.8 10 8 10Z" 
+        stroke="currentColor" 
+        strokeWidth="3" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+      <path 
+        d="M40 18H42C43.1 18 44 18.9 44 20V32C44 33.1 43.1 34 42 34H40V40L34 34H28" 
+        stroke="currentColor" 
+        strokeWidth="3" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+// Task icon - checkbox with checkmark
+export function CategoryTaskIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 48 48" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('shrink-0', className)}
+    >
+      <rect x="8" y="8" width="32" height="32" rx="4" stroke="currentColor" strokeWidth="3" />
+      <path d="M16 24L22 30L32 18" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// Gem icon - for most interesting/deep transcripts
+export function GemIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 112 112" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('shrink-0', className)}
+    >
+      <path 
+        d="M49.75 46L44.75 51L49.75 56M29.75 51L44.75 36H67.25L82.25 51L56 77.25L29.75 51Z" 
+        stroke="currentColor" 
+        strokeWidth="5" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+// Shield icon - for local data processing disclaimer
+export function ShieldIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 48 48" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('shrink-0', className)}
+    >
+      <path 
+        d="M24 4L6 12V22C6 33.1 13.6 43.2 24 46C34.4 43.2 42 33.1 42 22V12L24 4Z" 
+        stroke="currentColor" 
+        strokeWidth="3" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+      <path d="M16 24L22 30L32 18" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// Time-Sensitive/Bell icon - for urgent/time-sensitive content
+export function TimeSensitiveIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 112 112" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('shrink-0', className)}
+    >
+      <path 
+        d="M30.3535 44.1259C31.275 39.9047 33.212 36.0631 35.8958 32.8701M76.1034 32.8701C78.7872 36.0631 80.7243 39.9047 81.6457 44.1259M46.5512 72.25C48.4372 75.9863 51.9622 78.5 55.9996 78.5C60.0369 78.5 63.562 75.9863 65.448 72.25M75.9996 71L72.982 48.3685C71.8471 39.8568 64.5866 33.5 55.9996 33.5C47.4126 33.5 40.152 39.8568 39.0171 48.3685L35.9996 71H75.9996Z" 
+        stroke="currentColor" 
+        strokeWidth="5" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+// Novelty/Star icon - for genuinely novel/interesting content
+export function NoveltyIcon({ size = 24, className }: BrandIconProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 112 112" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn('shrink-0', className)}
+    >
+      <path 
+        d="M48.5 66.0006L38.5 76.0006M43.5 53.5006L33.5 63.5006M66 66.0006L56 76.0006M64.75 31L69.6874 39.2043L79.0158 41.3647L72.7389 48.5957L73.5668 58.1353L64.75 54.4L55.9332 58.1353L56.7611 48.5957L50.4842 41.3647L59.8126 39.2043L64.75 31Z" 
+        stroke="currentColor" 
+        strokeWidth="5" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
     </svg>
   )
 }

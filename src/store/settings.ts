@@ -22,17 +22,8 @@ export interface ArchivedTranscript {
   segments: TranscriptSegment[]
   speakers: ArchivedSpeaker[]
   hasConsent: boolean
-  // AI-generated analysis
-  category?: string // e.g., "Note", "Email", "Rant", "Idea", or custom
-  urgencyLevel?: number // 0-5: 0=not urgent, 5=extremely urgent
-  noveltyLevel?: number // 0-5: 0=routine, 5=groundbreaking
-  // Legacy fields (kept for backwards compatibility)
-  priority?: string
-  priorityReason?: string
-  qualityScore?: number
-  qualityReason?: string
-  noveltyScore?: number
-  coherenceScore?: number
+  category?: string
+  isImportant?: boolean // User-marked as important
   createdAt: number
 }
 

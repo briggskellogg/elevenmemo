@@ -1,9 +1,18 @@
 /**
- * CategoryTag - Colored pill component for memo categories
- * Uses ElevenLabs brand palette colors
+ * CategoryTag - Icon-based pill component for memo categories
+ * Uses ElevenLabs brand palette colors with category-specific icons
  */
 
 import { cn } from '@/lib/utils'
+import {
+  CategoryNoteIcon,
+  CategoryMessageIcon,
+  CategoryRantIcon,
+  CategoryIdeaIcon,
+  CategoryMeetingIcon,
+  CategoryConversationIcon,
+  CategoryTaskIcon,
+} from '@/components/ui/brand-icons'
 
 // ElevenLabs brand color mapping for categories
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -44,6 +53,27 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string
   },
 }
 
+// Category icon mapping
+const CATEGORY_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Note: CategoryNoteIcon,
+  Message: CategoryMessageIcon,
+  Rant: CategoryRantIcon,
+  Idea: CategoryIdeaIcon,
+  Meeting: CategoryMeetingIcon,
+  Conversation: CategoryConversationIcon,
+  Task: CategoryTaskIcon,
+}
+
+// Helper to get category icon component
+export function getCategoryIcon(category: string): React.ComponentType<{ size?: number; className?: string }> {
+  return CATEGORY_ICONS[category] || CategoryNoteIcon
+}
+
+// Helper to get category colors
+export function getCategoryColors(category: string): { bg: string; text: string; border: string } {
+  return CATEGORY_COLORS[category] || DEFAULT_COLOR
+}
+
 // Default/fallback for custom categories
 const DEFAULT_COLOR = {
   bg: 'bg-[#37C8B5]/15',
@@ -57,6 +87,7 @@ interface CategoryTagProps {
   onClick?: () => void
   selected?: boolean
   className?: string
+  showLabel?: boolean // Show text label alongside icon (useful for selectors)
 }
 
 export function CategoryTag({
@@ -65,31 +96,43 @@ export function CategoryTag({
   onClick,
   selected = false,
   className,
+  showLabel = false,
 }: CategoryTagProps) {
   const colors = CATEGORY_COLORS[category] || DEFAULT_COLOR
+  const IconComponent = CATEGORY_ICONS[category] || CategoryNoteIcon
 
   const sizeClasses = {
-    sm: 'text-[10px] px-2 py-0.5 gap-1',
-    md: 'text-[11px] px-2.5 py-1 gap-1.5',
-    lg: 'text-xs px-3 py-1.5 gap-2',
+    sm: 'p-1',
+    md: 'p-1.5',
+    lg: 'p-2',
+  }
+  
+  const iconSizes = {
+    sm: 12,
+    md: 14,
+    lg: 16,
   }
 
   return (
     <span
       onClick={onClick}
+      title={category}
       className={cn(
-        'inline-flex items-center rounded-full font-semibold border transition-all duration-200',
-        'tracking-wide uppercase',
+        'inline-flex items-center justify-center rounded-full border transition-all duration-200',
         colors.bg,
         colors.text,
         colors.border,
         sizeClasses[size],
-        onClick && 'cursor-pointer hover:scale-105 hover:shadow-sm active:scale-100',
+        showLabel && 'px-2 gap-1',
+        onClick && 'cursor-pointer hover:scale-110 hover:shadow-sm active:scale-100',
         selected && 'ring-2 ring-offset-1 ring-offset-background ring-current shadow-md',
         className
       )}
     >
-      {category}
+      <IconComponent size={iconSizes[size]} />
+      {showLabel && (
+        <span className="text-[10px] font-semibold uppercase tracking-wide">{category}</span>
+      )}
     </span>
   )
 }
@@ -238,6 +281,7 @@ export function CategorySelector({
           size="sm"
           selected={value === category}
           onClick={() => onChange(category)}
+          showLabel={true}
         />
       ))}
     </div>

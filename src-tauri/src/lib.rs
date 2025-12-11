@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager};
 
+
 // Validation functions
 fn validate_filename(filename: &str) -> Result<(), String> {
     // Regex pattern: only alphanumeric, dash, underscore, dot
@@ -55,6 +56,100 @@ fn greet(name: &str) -> String {
 
     log::info!("Greeting user: {name}");
     format!("Hello, {name}! You've been greeted from Rust!")
+}
+
+// Touch ID / Password authentication for macOS
+// Uses Swift helper to invoke LocalAuthentication framework
+#[tauri::command]
+async fn authenticate_biometric(reason: String) -> Result<bool, String> {
+    log::info!("Biometric authentication requested: {reason}");
+    
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        
+        // Use Swift to call LocalAuthentication framework directly
+        // This triggers native Touch ID or password prompt
+        let swift_code = format!(
+            r#"
+            import LocalAuthentication
+            import Foundation
+            
+            let context = LAContext()
+            let reason = "{}"
+            var error: NSError?
+            
+            // Check if biometrics or password available
+            guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {{
+                print("ERROR: Biometrics not available")
+                exit(1)
+            }}
+            
+            let semaphore = DispatchSemaphore(value: 0)
+            var authSuccess = false
+            
+            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) {{ success, authError in
+                authSuccess = success
+                if !success {{
+                    if let err = authError as? LAError {{
+                        switch err.code {{
+                        case .userCancel:
+                            print("CANCELLED")
+                        case .userFallback:
+                            print("FALLBACK")
+                        default:
+                            print("ERROR: \(err.localizedDescription)")
+                        }}
+                    }}
+                }}
+                semaphore.signal()
+            }}
+            
+            semaphore.wait()
+            
+            if authSuccess {{
+                print("SUCCESS")
+                exit(0)
+            }} else {{
+                exit(1)
+            }}
+            "#,
+            reason.replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        
+        let output = Command::new("swift")
+            .arg("-e")
+            .arg(&swift_code)
+            .output();
+        
+        match output {
+            Ok(result) => {
+                let stdout = String::from_utf8_lossy(&result.stdout);
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                
+                if result.status.success() && stdout.contains("SUCCESS") {
+                    log::info!("Touch ID authentication successful");
+                    Ok(true)
+                } else if stdout.contains("CANCELLED") {
+                    log::info!("Touch ID authentication cancelled");
+                    Err("Cancelled".to_string())
+                } else {
+                    log::warn!("Touch ID auth failed: {} {}", stdout, stderr);
+                    Err("Authentication failed".to_string())
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to run Swift authentication: {}", e);
+                Err(format!("Failed to authenticate: {}", e))
+            }
+        }
+    }
+    
+    #[cfg(not(target_os = "macos"))]
+    {
+        log::warn!("Biometric authentication not supported on this platform");
+        Ok(true) // Allow access on unsupported platforms
+    }
 }
 
 // Preferences data structure
@@ -509,6 +604,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            authenticate_biometric,
             load_preferences,
             save_preferences,
             send_native_notification,
