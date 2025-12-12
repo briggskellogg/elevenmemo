@@ -391,7 +391,7 @@ export function ArchiveDialog() {
         side="bottom" 
         className="h-[80vh] rounded-t-3xl border-t border-border/30 shadow-2xl bg-background/98 backdrop-blur-xl"
       >
-        <div className="h-full flex flex-col px-[34px] sm:px-[55px] max-w-3xl mx-auto pt-[13px]">
+        <div className="h-full flex flex-col px-[21px] sm:px-[34px] max-w-3xl mx-auto pt-[13px]">
           {/* Header */}
           <SheetHeader className="pb-[21px]">
             <div className="flex items-center justify-center gap-[13px]">
@@ -421,8 +421,8 @@ export function ArchiveDialog() {
             </div>
           </SheetHeader>
 
-          {/* Search bar and filter row - same width as memo cards */}
-          <div className="flex items-center gap-3 mb-[21px] -mx-[34px] sm:-mx-[55px] px-[34px] sm:px-[55px]">
+          {/* Search bar and filter row - full width */}
+          <div className="flex items-center gap-3 mb-[21px]">
             {/* Search bar - takes remaining space */}
             <div className="relative flex-1 min-w-0">
               <div className="absolute left-[13px] top-1/2 -translate-y-1/2">
@@ -462,7 +462,7 @@ export function ArchiveDialog() {
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto -mx-[34px] sm:-mx-[55px] px-[34px] sm:px-[55px]">
+          <div className="flex-1 overflow-y-auto">
             {filteredTranscripts.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-[89px] text-center">
                 <EmptyArchiveIcon size={55} className="text-muted-foreground/15 mb-[21px]" />
